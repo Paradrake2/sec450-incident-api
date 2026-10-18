@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Literal
 from uuid import uuid4
+from json import dumps, loads
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.exceptions import RequestValidationError
@@ -55,7 +56,6 @@ class LinkRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     relatedIncidentId: str = Field(min_length=1)
 
-from json import dumps, loads
 
 def stamp(dt):
     if not dt:
