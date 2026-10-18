@@ -6,8 +6,9 @@ fd, db = tempfile.mkstemp(suffix=".db")
 os.close(fd)
 os.environ["DATABASE_URL"] = "sqlite:///" + db
 
-from fastapi.testclient import TestClient
-from main import app, Base, engine
+# noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+from main import app, Base, engine  # noqa: E402
 
 
 def new_incident(client, log="ordinary access log"):
