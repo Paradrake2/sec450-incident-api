@@ -1,6 +1,6 @@
 # SEC450 Incident Evidence API — Phase 3
 
-This is a **coursework demo**, not a real cybersecurity compliance tool. Use **synthetic logs only**. It follows the Phase 2 v1.0.0 HTTP operation paths. The Phase 3 basic assessment uses deterministic keyword screening and is **not** an SEC materiality determination. Review, linking and disclosure are basic Phase 4 prototypes, not finished legal workflows.
+Use synthetic logs only. 
 
 ## Get running locally (Windows PowerShell)
 
