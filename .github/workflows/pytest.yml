@@ -1,0 +1,7 @@
+- name: Check Python syntax
+  run: python -m compileall -q main.py tests
+
+- name: Run static linting
+  run: |
+    pip install ruff
+    ruff check .
