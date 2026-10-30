@@ -54,3 +54,48 @@ def test_failures():
         assert c.get(f"/api/v1/incidents/{ident}").json()["state"] == "UNDER_REVIEW"
         assert c.post(f"/api/v1/incidents/{ident}/assessment").status_code == 409
         assert c.post(f"/api/v1/incidents/{ident}/review", json={"decision":"INVALID","reviewer":"tester"}).status_code == 400
+
+
+def test_ac03_ransomware_assessment_is_stored():
+    with TestClient(app) as c:
+        c.post('/api/v1/test/reset')
+        incident_id = new_incident(c, 'Possible ransomware affecting production servers').json()['id']
+        response = c.post(f'/api/v1/incidents/{incident_id}/assessment')
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload['potentiallyMaterial'] is True
+        assert 'ransomware' in payload['indicators']
+        stored = c.get(f'/api/v1/incidents/{incident_id}').json()
+        assert stored['state'] == 'POTENTIALLY_MATERIAL'
+        assert stored['assessment'] == payload
+
+
+def test_ac03_negated_indicator_does_not_escalate():
+    with TestClient(app) as c:
+        c.post('/api/v1/test/reset')
+        incident_id = new_incident(c, 'No evidence of data breach or unauthorized access').json()['id']
+        response = c.post(f'/api/v1/incidents/{incident_id}/assessment')
+        assert response.status_code == 200
+        assert response.json()['potentiallyMaterial'] is False
+        assert c.get(f'/api/v1/incidents/{incident_id}').json()['state'] == 'UNDER_REVIEW'
+
+
+def test_ac03_repeated_failed_admin_logins_escalate():
+    with TestClient(app) as c:
+        c.post('/api/v1/test/reset')
+        incident_id = new_incident(c, 'Failed password for admin from 203.0.113.5, 12 attempts in 90s').json()['id']
+        response = c.post(f'/api/v1/incidents/{incident_id}/assessment')
+        assert response.status_code == 200
+        assert response.json()['potentiallyMaterial'] is True
+        assert c.get(f'/api/v1/incidents/{incident_id}').json()['state'] == 'POTENTIALLY_MATERIAL'
+
+
+def test_ac03_second_assessment_rejected_without_mutating_record():
+    with TestClient(app) as c:
+        c.post('/api/v1/test/reset')
+        incident_id = new_incident(c, 'Possible data breach').json()['id']
+        c.post(f'/api/v1/incidents/{incident_id}/assessment')
+        prior = c.get(f'/api/v1/incidents/{incident_id}').json()
+        rejected = c.post(f'/api/v1/incidents/{incident_id}/assessment')
+        assert rejected.status_code == 409
+        assert c.get(f'/api/v1/incidents/{incident_id}').json() == prior
