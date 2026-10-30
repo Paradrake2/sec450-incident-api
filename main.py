@@ -11,7 +11,7 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import create_engine, Column, String, Text, DateTime, select, delete
+from sqlalchemy import create_engine, Column, String, Text, DateTime, ForeignKey, select, delete
 from sqlalchemy.orm import DeclarativeBase, Session
 
 from triage import assess_log
@@ -39,6 +39,16 @@ class IncidentRow(Base):
     assessment = Column(Text, nullable=True)
     review = Column(Text, nullable=True)
     related = Column(Text, nullable=False, default="[]")
+
+class ReviewRow(Base):
+    """Append-only review decisions; IncidentRow.review stays the latest snapshot."""
+    __tablename__ = "incident_reviews"
+    id = Column(String(36), primary_key=True)
+    incident_id = Column(String(36), ForeignKey("incidents.id"), nullable=False, index=True)
+    decision = Column(String(20), nullable=False)
+    reviewer = Column(Text, nullable=False)
+    rationale = Column(Text, nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=False)
 
 class CreateIncident(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -85,9 +95,38 @@ def get_incident(session, incident_id):
         error("INCIDENT_NOT_FOUND", "No incident exists with the supplied identifier", 404)
     return obj
 
+def backfill_legacy_reviews():
+    """Preserve the latest existing review when upgrading a Phase 3 database.
+
+    Previous overwritten decisions cannot be reconstructed. This is idempotent
+    for normal single-worker startup; new reviews are inserted transactionally.
+    """
+    with Session(engine) as session:
+        legacy_incidents = session.scalars(select(IncidentRow).where(IncidentRow.review.isnot(None)))
+        count = 0
+        for incident in legacy_incidents:
+            existing = session.scalar(
+                select(ReviewRow.id).where(ReviewRow.incident_id == incident.id).limit(1)
+            )
+            if existing is not None:
+                continue
+            snapshot = loads(incident.review)
+            reviewed_at = datetime.fromisoformat(snapshot["reviewedAt"].replace("Z", "+00:00"))
+            session.add(ReviewRow(
+                id=str(uuid4()), incident_id=incident.id, decision=snapshot["decision"],
+                reviewer=snapshot["reviewer"], rationale=snapshot.get("rationale"),
+                reviewed_at=reviewed_at,
+            ))
+            count += 1
+        session.commit()
+        if count:
+            log.info("backfilled %s legacy review snapshots", count)
+
+
 @asynccontextmanager
 async def lifespan(app):
     Base.metadata.create_all(engine)
+    backfill_legacy_reviews()
     log.info("service ready database=%s", "postgresql" if DB_URL.startswith("postgresql") else "sqlite")
     yield
 
@@ -125,6 +164,7 @@ def health():
 def reset():
     # WARNING: Spec requires unauthenticated reset. Deploy only with synthetic demo data.
     with Session(engine) as session:
+        session.execute(delete(ReviewRow))
         session.execute(delete(IncidentRow))
         session.commit()
     return Response(status_code=204)
@@ -173,18 +213,51 @@ def assess(incident_id: str):
         session.commit()
         return value
 
+# Phase 2 state machine: assessments are advisory; human review is final.
+# NOT_MATERIAL may later escalate to MATERIAL. Confirmed material cannot be
+# downgraded and a closed or unassessed incident cannot be reviewed.
+ALLOWED_REVIEW_DECISIONS = {
+    "UNDER_REVIEW": frozenset({"MATERIAL", "NOT_MATERIAL"}),
+    "POTENTIALLY_MATERIAL": frozenset({"MATERIAL", "NOT_MATERIAL"}),
+    "NOT_MATERIAL": frozenset({"MATERIAL"}),
+}
+
+
+def serialize_review(row):
+    return {"id": row.id, "decision": row.decision, "reviewer": row.reviewer,
+            "rationale": row.rationale, "reviewedAt": stamp(row.reviewed_at)}
+
+
 @app.post("/api/v1/incidents/{incident_id}/review")
 def review(incident_id: str, data: ReviewRequest):
     if not data.reviewer.strip():
         error("INVALID_REQUEST", "reviewer must not be blank", 400, "reviewer")
     with Session(engine) as session:
         row = get_incident(session, incident_id)
-        if row.state in {"RECEIVED", "CLOSED"} or (row.state == "MATERIAL_CONFIRMED" and data.decision == "NOT_MATERIAL"):
+        if data.decision not in ALLOWED_REVIEW_DECISIONS.get(row.state, ()):
             error("INVALID_STATE", "Review is not permitted in current state", 409)
-        row.review = dumps({"decision": data.decision, "reviewer": data.reviewer, "rationale": data.rationale, "reviewedAt": stamp(datetime.now(timezone.utc))})
+
+        reviewed_at = datetime.now(timezone.utc)
+        snapshot = {"decision": data.decision, "reviewer": data.reviewer,
+                    "rationale": data.rationale, "reviewedAt": stamp(reviewed_at)}
+        session.add(ReviewRow(id=str(uuid4()), incident_id=row.id, decision=data.decision,
+                              reviewer=data.reviewer, rationale=data.rationale, reviewed_at=reviewed_at))
+        row.review = dumps(snapshot)  # Backward-compatible most recent review.
         row.state = "MATERIAL_CONFIRMED" if data.decision == "MATERIAL" else "NOT_MATERIAL"
-        session.commit()
+        session.commit()  # Record the decision and new state in one transaction.
         return serialize(row)
+
+
+@app.get("/api/v1/incidents/{incident_id}/reviews")
+def list_reviews(incident_id: str):
+    """Optional read-only history endpoint; original Incident response is unchanged."""
+    with Session(engine) as session:
+        get_incident(session, incident_id)
+        reviews = session.scalars(
+            select(ReviewRow).where(ReviewRow.incident_id == incident_id)
+            .order_by(ReviewRow.reviewed_at, ReviewRow.id)
+        )
+        return [serialize_review(item) for item in reviews]
 
 @app.post("/api/v1/incidents/{incident_id}/related")
 def relate(incident_id: str, data: LinkRequest):
