@@ -1,7 +1,6 @@
 """SEC450 incident evidence API (educational, synthetic data only)."""
 import logging
 import os
-import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Literal
@@ -14,6 +13,8 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import create_engine, Column, String, Text, DateTime, select, delete
 from sqlalchemy.orm import DeclarativeBase, Session
+
+from triage import assess_log
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("sec450")
@@ -158,8 +159,7 @@ def get_one(incident_id: str):
     with Session(engine) as session:
         return serialize(get_incident(session, incident_id))
 
-# Basic deterministic Phase 3 screening, not a legal materiality determination.
-SIGNALS = {"ransomware": "ransomware", "data breach": "possible data breach", "exfiltrat": "possible data exfiltration", "customer data": "customer data exposure", "system outage": "service interruption", "unauthorized access": "unauthorized access"}
+
 
 @app.post("/api/v1/incidents/{incident_id}/assessment")
 def assess(incident_id: str):
@@ -167,13 +167,9 @@ def assess(incident_id: str):
         row = get_incident(session, incident_id)
         if row.state != "RECEIVED":
             error("INVALID_STATE", "Incident cannot be assessed in its current state", 409)
-        indicators = [label for fragment, label in SIGNALS.items() if fragment in row.log.lower()]
-        is_candidate = bool(indicators)
-        value = {"potentiallyMaterial": is_candidate,
-                 "explanation": "Detected indicators requiring human materiality review: " + ", ".join(indicators) if indicators else "No configured screening indicators found; human review is still required.",
-                 "indicators": indicators}
+        value = assess_log(row.log)
         row.assessment = dumps(value)
-        row.state = "POTENTIALLY_MATERIAL" if is_candidate else "UNDER_REVIEW"
+        row.state = "POTENTIALLY_MATERIAL" if value["potentiallyMaterial"] else "UNDER_REVIEW"
         session.commit()
         return value
 
