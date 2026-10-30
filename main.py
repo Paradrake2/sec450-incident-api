@@ -5,14 +5,15 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Literal
 from uuid import uuid4
-from json import dumps, loads
+from json import dumps, loads, JSONDecodeError
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import create_engine, Column, String, Text, DateTime, ForeignKey, select, delete
+from sqlalchemy import create_engine, Column, String, Text, DateTime, ForeignKey, CheckConstraint, or_, select, delete
 from sqlalchemy.orm import DeclarativeBase, Session
+from sqlalchemy.exc import IntegrityError
 
 from triage import assess_log
 
@@ -50,6 +51,16 @@ class ReviewRow(Base):
     rationale = Column(Text, nullable=True)
     reviewed_at = Column(DateTime(timezone=True), nullable=False)
 
+class RelationRow(Base):
+    """Each undirected link is stored exactly once, using canonical ID order."""
+    __tablename__ = "incident_relations"
+    incident_a_id = Column(String(36), ForeignKey("incidents.id"), primary_key=True)
+    incident_b_id = Column(String(36), ForeignKey("incidents.id"), primary_key=True)
+    __table_args__ = (
+        CheckConstraint("incident_a_id < incident_b_id", name="ck_relation_canonical_order"),
+    )
+
+
 class CreateIncident(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: str = Field(min_length=1, max_length=200)
@@ -75,13 +86,24 @@ def stamp(dt):
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.isoformat()
 
-def serialize(row):
+def related_ids(session, incident_id):
+    """Read authoritative link records rather than legacy JSON snapshots."""
+    pairs = session.execute(
+        select(RelationRow.incident_a_id, RelationRow.incident_b_id).where(
+            or_(RelationRow.incident_a_id == incident_id,
+                RelationRow.incident_b_id == incident_id)
+        )
+    ).all()
+    return sorted(b if a == incident_id else a for a, b in pairs)
+
+
+def serialize(row, session):
     return {"id": row.id, "title": row.title, "log": row.log,
             "occurredAt": stamp(row.occurred_at), "createdAt": stamp(row.created_at),
             "source": row.source, "state": row.state,
             "assessment": loads(row.assessment) if row.assessment else None,
             "review": loads(row.review) if row.review else None,
-            "relatedIncidentIds": loads(row.related)}
+            "relatedIncidentIds": related_ids(session, row.id)}
 
 def error(code, message, status, field=None):
     body = {"error": code, "message": message}
@@ -123,10 +145,50 @@ def backfill_legacy_reviews():
             log.info("backfilled %s legacy review snapshots", count)
 
 
+def backfill_legacy_relations():
+    """One-time compatible import from old symmetric or asymmetric JSON lists.
+
+    Existing serialized snapshots remain untouched. A valid legacy link is
+    imported once even if both incident rows reference each other. Normal
+    application reads now use the normalized relationship table exclusively.
+    """
+    with Session(engine) as session:
+        incidents = session.scalars(select(IncidentRow)).all()
+        valid_ids = {row.id for row in incidents}
+        existing_pairs = {
+            (a, b) for a, b in session.execute(
+                select(RelationRow.incident_a_id, RelationRow.incident_b_id)
+            )
+        }
+        added = 0
+        for incident in incidents:
+            try:
+                legacy_ids = loads(incident.related or "[]")
+            except (TypeError, JSONDecodeError):
+                log.warning("skipping invalid legacy relations for incident_id=%s", incident.id)
+                continue
+            if not isinstance(legacy_ids, list):
+                log.warning("skipping non-array legacy relations for incident_id=%s", incident.id)
+                continue
+            for other_id in legacy_ids:
+                if not isinstance(other_id, str) or other_id == incident.id or other_id not in valid_ids:
+                    log.warning("skipping dangling or invalid legacy relation for incident_id=%s", incident.id)
+                    continue
+                pair = tuple(sorted((incident.id, other_id)))
+                if pair not in existing_pairs:
+                    session.add(RelationRow(incident_a_id=pair[0], incident_b_id=pair[1]))
+                    existing_pairs.add(pair)
+                    added += 1
+        session.commit()
+        if added:
+            log.info("backfilled %s legacy incident relations", added)
+
+
 @asynccontextmanager
 async def lifespan(app):
     Base.metadata.create_all(engine)
     backfill_legacy_reviews()
+    backfill_legacy_relations()
     log.info("service ready database=%s", "postgresql" if DB_URL.startswith("postgresql") else "sqlite")
     yield
 
@@ -164,6 +226,7 @@ def health():
 def reset():
     # WARNING: Spec requires unauthenticated reset. Deploy only with synthetic demo data.
     with Session(engine) as session:
+        session.execute(delete(RelationRow))
         session.execute(delete(ReviewRow))
         session.execute(delete(IncidentRow))
         session.commit()
@@ -180,7 +243,7 @@ def create_incident(data: CreateIncident):
         session.add(row)
         session.commit()
         session.refresh(row)
-        return serialize(row)
+        return serialize(row, session)
 
 STATES = {"RECEIVED", "UNDER_REVIEW", "POTENTIALLY_MATERIAL", "NOT_MATERIAL", "MATERIAL_CONFIRMED", "CLOSED"}
 
@@ -192,14 +255,12 @@ def list_incidents(state: str | None = None):
         query = select(IncidentRow).order_by(IncidentRow.created_at, IncidentRow.id)
         if state is not None:
             query = query.where(IncidentRow.state == state)
-        return [serialize(row) for row in session.scalars(query)]
+        return [serialize(row, session) for row in session.scalars(query)]
 
 @app.get("/api/v1/incidents/{incident_id}")
 def get_one(incident_id: str):
     with Session(engine) as session:
-        return serialize(get_incident(session, incident_id))
-
-
+        return serialize(get_incident(session, incident_id), session)
 
 @app.post("/api/v1/incidents/{incident_id}/assessment")
 def assess(incident_id: str):
@@ -245,7 +306,7 @@ def review(incident_id: str, data: ReviewRequest):
         row.review = dumps(snapshot)  # Backward-compatible most recent review.
         row.state = "MATERIAL_CONFIRMED" if data.decision == "MATERIAL" else "NOT_MATERIAL"
         session.commit()  # Record the decision and new state in one transaction.
-        return serialize(row)
+        return serialize(row, session)
 
 
 @app.get("/api/v1/incidents/{incident_id}/reviews")
@@ -266,12 +327,19 @@ def relate(incident_id: str, data: LinkRequest):
         other = get_incident(session, data.relatedIncidentId)
         if row.state == "CLOSED" or other.state == "CLOSED":
             error("INVALID_STATE", "Closed incidents cannot be modified", 409)
-        if row.id == other.id or other.id in loads(row.related):
+        if row.id == other.id:
             error("DUPLICATE_RELATION", "Relation already exists or relates incident to itself", 409)
-        row.related = dumps([*loads(row.related), other.id])
-        other.related = dumps([*loads(other.related), row.id])
-        session.commit()
-        return serialize(row)
+        a, b = sorted((row.id, other.id))
+        if session.get(RelationRow, (a, b)) is not None:
+            error("DUPLICATE_RELATION", "Relation already exists or relates incident to itself", 409)
+        session.add(RelationRow(incident_a_id=a, incident_b_id=b))
+        try:
+            session.commit()
+        except IntegrityError:
+            # Unique composite key protects against simultaneous duplicate links.
+            session.rollback()
+            error("DUPLICATE_RELATION", "Relation already exists or relates incident to itself", 409)
+        return serialize(row, session)
 
 @app.post("/api/v1/incidents/{incident_id}/disclosure")
 def disclosure(incident_id: str):
