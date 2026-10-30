@@ -11,11 +11,12 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import create_engine, Column, String, Text, DateTime, ForeignKey, CheckConstraint, or_, select, delete
+from sqlalchemy import create_engine, Column, String, Text, DateTime, ForeignKey, CheckConstraint, Boolean, or_, select, delete
 from sqlalchemy.orm import DeclarativeBase, Session
 from sqlalchemy.exc import IntegrityError
 
 from triage import assess_log
+from disclosure_templates import build_draft
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("sec450")
@@ -59,6 +60,16 @@ class RelationRow(Base):
     __table_args__ = (
         CheckConstraint("incident_a_id < incident_b_id", name="ck_relation_canonical_order"),
     )
+
+
+class DisclosureRow(Base):
+    """Immutable generated disclosure versions, never final SEC filings."""
+    __tablename__ = "disclosure_drafts"
+    id = Column(String(36), primary_key=True)
+    incident_id = Column(String(36), ForeignKey("incidents.id"), nullable=False, index=True)
+    draft = Column(Text, nullable=False)
+    generated_at = Column(DateTime(timezone=True), nullable=False)
+    final = Column(Boolean, nullable=False, default=False)
 
 
 class CreateIncident(BaseModel):
@@ -226,6 +237,7 @@ def health():
 def reset():
     # WARNING: Spec requires unauthenticated reset. Deploy only with synthetic demo data.
     with Session(engine) as session:
+        session.execute(delete(DisclosureRow))
         session.execute(delete(RelationRow))
         session.execute(delete(ReviewRow))
         session.execute(delete(IncidentRow))
@@ -341,16 +353,43 @@ def relate(incident_id: str, data: LinkRequest):
             error("DUPLICATE_RELATION", "Relation already exists or relates incident to itself", 409)
         return serialize(row, session)
 
+def serialize_disclosure(row):
+    """Preserve the shared four-field DisclosureDraft response format."""
+    return {"incidentId": row.incident_id, "draft": row.draft,
+            "generatedAt": stamp(row.generated_at), "final": False}
+
+
 @app.post("/api/v1/incidents/{incident_id}/disclosure")
 def disclosure(incident_id: str):
     with Session(engine) as session:
         row = get_incident(session, incident_id)
-        if row.state != "MATERIAL_CONFIRMED":
+        if row.state != "MATERIAL_CONFIRMED" or not row.review:
             error("INVALID_STATE", "A material human review is required before drafting", 409)
-        # Explicit non-final template. No automatic legal analysis or filing.
-        draft = (f"DRAFT FOR LEGAL REVIEW — NOT AN SEC FILING\nIncident: {row.title}\n"
-                 f"Known incident timing: {stamp(row.occurred_at)}\n"
-                 f"Reported facts (unverified): {row.log[:2000]}\n"
-                 "Nature, scope, and material impact: To be verified and completed by legal counsel.\n"
-                 "This draft must be reviewed and approved by authorized personnel.")
-        return {"incidentId": row.id, "draft": draft, "generatedAt": stamp(datetime.now(timezone.utc)), "final": False}
+        # Human review is submitted evidence, not verified identity or legal approval.
+        review_data = loads(row.review)
+        if review_data.get("decision") != "MATERIAL":
+            error("INVALID_STATE", "A material human review is required before drafting", 409)
+        draft = build_draft(
+            incident_id=row.id, title=row.title, log=row.log,
+            occurred_at=stamp(row.occurred_at), created_at=stamp(row.created_at),
+            source=row.source, review=review_data,
+        )
+        record = DisclosureRow(
+            id=str(uuid4()), incident_id=row.id, draft=draft,
+            generated_at=datetime.now(timezone.utc), final=False,
+        )
+        session.add(record)
+        session.commit()
+        return serialize_disclosure(record)
+
+
+@app.get("/api/v1/incidents/{incident_id}/disclosures")
+def list_disclosures(incident_id: str):
+    """Optional history endpoint; not part of the common pod contract."""
+    with Session(engine) as session:
+        get_incident(session, incident_id)
+        drafts = session.scalars(
+            select(DisclosureRow).where(DisclosureRow.incident_id == incident_id)
+            .order_by(DisclosureRow.generated_at, DisclosureRow.id)
+        )
+        return [{"id": d.id, **serialize_disclosure(d)} for d in drafts]
