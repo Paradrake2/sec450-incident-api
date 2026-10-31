@@ -1,0 +1,9 @@
+{
+  "report_id": 17,
+  "fixture_note": "Synthetic minimal example; not a verified Team 102 response schema.",
+  "body": {
+    "summary": "Synthetic report for local import validation",
+    "raw_lines": ["Synthetic log entry; no real system or person is represented."],
+    "ai_assessment": {"status": "unavailable", "reason": "Synthetic fixture"}
+  }
+}

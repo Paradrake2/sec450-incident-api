@@ -2,7 +2,7 @@
 
 **Team 105 (Indy, Pod C) — Cybersecurity Incident Evidence & SEC Disclosure Support**
 
-A REST API for receiving, storing, assessing, and reviewing cybersecurity incidents. The backend preserves submitted evidence and supports human review and preliminary disclosure drafting. Integration with Pod C's Team 102 log detection service is being designed around a proposed shared PostgreSQL company-data source; the existing API also accepts incident JSON directly.
+A REST API for receiving, storing, assessing, and reviewing cybersecurity incidents. The backend preserves submitted evidence and supports human review and preliminary disclosure drafting. The selected Team 102 integration uses its read-only Query API and preserves source reports in our application-owned PostgreSQL database. Shared PostgreSQL is deferred. The existing API also accepts incident JSON directly.
 
 > **Coursework prototype — synthetic data only.** This is not a production incident-response or legal compliance system. Automated screening does **not** establish legal materiality, and disclosure output is not an SEC filing.
 
@@ -110,17 +110,19 @@ notes described as **Team 102 → Team 105**:
 4. Our API returns an incident ID and stores the record with state `RECEIVED`.
 5. Either team can use that ID to verify retrieval and subsequent assessment.
 
-The user clarified on October 31 that the desired direction is a common
-PostgreSQL company-data store that Team 105 reads, and confirmed that this is
-still a design proposal. Shared schema, source identity, ingestion ownership,
-and permissions remain to be agreed with Team 102. See
-[company-data and reviewer-access design](docs/company-data-design.md).
+The selected approach is now Team 102's **read-only Query API** at
+https://seclog.redinbo.win, with our own PostgreSQL storage for preserved source
+reports and application records. Shared database access is deferred and was
+not established as an inter-team agreement.
 
-Team 102 also documents a **separate read-only Query API** at
-https://seclog.redinbo.win, using authenticated endpoints such as `/v1/reports`.
-Our deployed application does not automatically poll or ingest that API, and
-no shared-database importer exists yet. The API intake capability, the proposed
-company-data source, and course cross-team testing are separate interfaces.
+An operator-only importer can fetch one explicitly selected report and retain
+an immutable content snapshot plus retrieval provenance. It uses migrations
+and has no public import endpoint, automatic polling, or automatic incident
+creation. Its minimal response parser still needs confirmation against a
+sanitized Team 102 example; all current validation uses synthetic responses.
+See [API import setup and limits](docs/team102-api-import.md) and
+[company-data and reviewer-access design](docs/company-data-design.md).
+The report-feed integration and course cross-team testing remain separate.
 
 ## Run locally
 

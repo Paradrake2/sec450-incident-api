@@ -6,7 +6,7 @@ Updated October 31, 2026. This log records repository work separately from the p
 
 - Starting branch: `main`; clean working tree.
 - Starting commit: `705dd115c174f7c64f317567364429d5c930694e`, matching the plan's pinned review.
-- Working branch: `phase4/database-foundation`.
+- Foundation branch: `phase4/database-foundation`; current API-import branch: `phase4/api-report-import`.
 - No repository or ancestor `AGENTS.md` was found in the inspected ancestry.
 - First implementation slice: B-01 baseline/specification reconciliation and B-02 consistent database access. Later course testing, product UI, evidence, AI, and deadline work remain separate tickets.
 - The architecture image describes product intent: preserve evidence, support advisory analysis and human decisions, prepare non-final drafts, and record history throughout. It does not establish implemented external integrations or authorize automatic filing.
@@ -134,7 +134,7 @@ authenticated endpoints were not exercised.
 | Timing/access | Confirm setup/run/project time limits, retry rules, approved target URLs, and staff/podmate access. Do not assume Team 102's separate query API implements this incident API. | T-02–03 registration |
 | Closure | `CLOSED` exists without a close route. Do not infer or introduce shared closure semantics. | W-01 |
 | Authentication | User chose application accounts with administrator-approved roles. Current API/reviewer strings remain unauthenticated; implement a protected product data boundary before real use. | F-02 |
-| Company data | User confirmed the shared PostgreSQL store is still a proposal. Agree a source-owned ingestion schema, source identity/version rules, and app-owned review/draft storage with Team 102 before building the importer. | Shared ingestion/evidence work |
+| Company data | Use Team 102's read-only Query API with application-owned PostgreSQL storage. Shared PostgreSQL is deferred. Confirm the detail-response schema, source IDs/corrections, and incident mapping before live automatic integration. | API ingestion/evidence work |
 | Hosting | Keep existing Render configuration; AWS remains deferred. Shared service merge/deployment review is a separate step. | Future release |
 
 ## Next review stages
@@ -190,3 +190,42 @@ Final local validation: **385 passed** on PostgreSQL 17.4 (7.47s); **383 passed,
 dependency deprecation warnings. The configured Ruff selection, syntax checks
 for all 24 root Python files, and whitespace checks passed. These are regression
 and mock-target results, not real outbound project-suite or deployment evidence.
+
+## API report-preservation checkpoint - October 31, 2026
+
+The selected integration now uses Team 102's existing read-only Query API;
+shared PostgreSQL remains deferred. This work is separate from the course
+testing controls and is recorded on `phase4/api-report-import`.
+
+Implemented a fixed-origin HTTPS report client, an explicit one-report import
+CLI, and private immutable snapshot/observation storage. Semantic JSON digests
+deduplicate repeated content for a source ID, while changed content creates a
+new snapshot and each retrieval creates an observation. Fixtures have a
+separate source namespace. Imports cannot alter incident/review/draft state.
+
+Alembic revisions freeze the four legacy tables and add the two private source
+tables. Explicit migration validates complete legacy schema topology before
+adoption; partial/drifted stores are refused. Fresh/adopted upgrade rollback,
+data preservation, import-table downgrade, and migration/model parity are
+tested. The subtype review found and fixed acceptance of CHAR as VARCHAR and
+CITEXT as TEXT. New report tables are not created by legacy application startup.
+
+Final local validation: **536 passed** on PostgreSQL 17.4 (24.38s); **533 passed,
+3 PostgreSQL-only skips** on SQLite (13.32s), with three existing warnings per
+run. Ruff, dependency validation, whitespace checks, and syntax for all 37
+Python files including revisions passed. A validated local PostgreSQL database
+was upgraded and the committed synthetic fixture imported twice: one snapshot,
+two observations, and unchanged incident row count. No Render migration or live
+source request occurred.
+
+The user asked whether our deployed incident schema also describes Team 102's
+reports. A fresh read of our OpenAPI confirmed `CreateIncident` requires title,
+log, and occurredAt; `IncidentResponse` adds string ID, state, assessment,
+review, and related IDs. The supplied Query API guide instead describes numeric
+report_id and a nested body. Team 102's public `/openapi.json` returned HTTP 530
+when checked. These may be different interfaces; identical live schemas have
+not been established. The minimal source parser remains isolated/provisional,
+and a sanitized source example has been requested. No automatic field mapping,
+incident creation, polling/cursor, or live compatibility claim is supplied.
+
+See [manual API import and migration notes](team102-api-import.md).
