@@ -1,18 +1,32 @@
-import os
-import tempfile
-
-# Isolate integration tests from developer database; set before importing main.
-fd, db = tempfile.mkstemp(suffix=".db")
-os.close(fd)
-os.environ["DATABASE_URL"] = "sqlite:///" + db
-
-# noqa: E402
-from fastapi.testclient import TestClient  # noqa: E402
-from main import app, Base, engine  # noqa: E402
+# conftest configures disposable storage before any application imports.
+from fastapi.testclient import TestClient
+from main import app, Base, engine
+import pytest
 
 
 def new_incident(client, log="ordinary access log"):
     return client.post("/api/v1/incidents", json={"title": "Test incident", "log": log, "occurredAt": "2026-10-16T12:00:00Z"})
+
+
+@pytest.mark.parametrize("occurred_at", [
+    "2026-10-31T09:00:00-04:00",
+    "2026-10-31T18:30:00+05:30",
+    "2026-10-31T13:00:00",
+])
+def test_occurrence_offset_preserves_utc_instant_after_storage(occurred_at):
+    with TestClient(app) as client:
+        assert client.post("/api/v1/test/reset").status_code == 204
+        response = client.post("/api/v1/incidents", json={
+            "title": "Synthetic offset timestamp", "log": "Routine event",
+            "occurredAt": occurred_at,
+        })
+        assert response.status_code == 201
+        incident = response.json()
+        assert incident["occurredAt"] == "2026-10-31T13:00:00+00:00"
+    with TestClient(app) as client:
+        stored = client.get(f"/api/v1/incidents/{incident['id']}")
+        assert stored.status_code == 200
+        assert stored.json()["occurredAt"] == incident["occurredAt"]
 
 
 def test_full_flow():

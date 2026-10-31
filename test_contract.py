@@ -1,9 +1,10 @@
 """AC-08 / Stage 3: external API contract and generated Swagger conformance.
 
-All tests use the isolated temporary SQLite database from test_api.py.
+Tests use the disposable SQLite or PostgreSQL store configured by conftest.py.
 Never point this test module at the shared Render deployment: it invokes reset.
 """
 from fastapi.testclient import TestClient
+import pytest
 
 from test_api import app, new_incident
 
@@ -50,6 +51,25 @@ def test_swagger_declares_real_response_models_and_error_shapes():
     assert review_response["content"]["application/json"]["schema"]["$ref"].endswith("IncidentResponse")
     disclosure = schema["paths"]["/api/v1/incidents/{incidentId}/disclosure"]["post"]["responses"]["200"]
     assert disclosure["content"]["application/json"]["schema"]["$ref"].endswith("DisclosureResponse")
+
+
+@pytest.mark.parametrize("path", [
+    "/api/v1/incidents",
+    "/api/v1/incidents/{incidentId}/review",
+    "/api/v1/incidents/{incidentId}/related",
+])
+def test_json_only_operations_document_their_runtime_415_response(path):
+    with TestClient(app) as client:
+        response = client.post(
+            path.replace("{incidentId}", "unknown"),
+            content="not JSON", headers={"content-type": "text/plain"},
+        )
+        assert response.status_code == 415
+        assert response.json() == {
+            "error": "UNSUPPORTED_MEDIA_TYPE", "message": "Use application/json",
+        }
+        documented = app.openapi()["paths"][path]["post"]["responses"]["415"]
+        assert documented["content"]["application/json"]["schema"]["$ref"].endswith("ErrorResponse")
 
 
 def test_contract_end_to_end_each_operation_and_state_transition():

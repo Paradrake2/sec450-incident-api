@@ -28,12 +28,46 @@ jobs:
           python -m pip install 'ruff>=0.9,<1'
 
       - name: Check Python syntax
-        run: python -m compileall -q main.py tests
+        run: python -m py_compile *.py
 
       - name: Static analysis with Ruff
         run: python -m ruff check --select E4,E7,E9,F63,F7,F82 .
 
       - name: Run regression tests
+        run: python -m pytest -q
+
+  postgres:
+    name: PostgreSQL 17 regression tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
         env:
-          DATABASE_URL: sqlite:///./ci-incidents.db
+          POSTGRES_USER: sec450
+          POSTGRES_PASSWORD: local-ci-only
+          POSTGRES_DB: sec450_test
+        ports:
+          - "127.0.0.1:5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U sec450 -d sec450_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql+psycopg://sec450:local-ci-only@127.0.0.1:5432/sec450_test
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install project and test dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Run regression tests against isolated PostgreSQL schemas
         run: python -m pytest -q

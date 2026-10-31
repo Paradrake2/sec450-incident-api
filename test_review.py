@@ -1,8 +1,8 @@
 """AC-05 tests: reviewer decisions, overrides, history and failure paths."""
 
-from datetime import datetime, timezone
 from json import dumps
 
+import pytest
 from sqlalchemy.orm import Session
 
 from test_api import TestClient, app, engine, new_incident  # ensures temporary DB is configured first
@@ -137,13 +137,17 @@ def test_ac05_history_persists_between_testclient_lifespans():
         assert history.json()[0]["decision"] == "NOT_MATERIAL"
 
 
-def test_ac05_backfills_legacy_review_once_and_does_not_erase_it():
+@pytest.mark.parametrize("reviewed_at", [
+    "2026-10-31T13:00:00+00:00",
+    "2026-10-31T09:00:00-04:00",
+    "2026-10-31T13:00:00",
+])
+def test_ac05_backfills_legacy_review_once_and_does_not_erase_it(reviewed_at):
     with TestClient(app) as client:
         client.post("/api/v1/test/reset")
         ident = create_assessed(client, "Routine system log")
-        now = datetime.now(timezone.utc)
         legacy = {"decision": "NOT_MATERIAL", "reviewer": "original-reviewer",
-                  "rationale": None, "reviewedAt": now.isoformat()}
+                  "rationale": None, "reviewedAt": reviewed_at}
         with Session(engine) as session:
             row = session.get(IncidentRow, ident)
             row.review = dumps(legacy)
@@ -154,6 +158,7 @@ def test_ac05_backfills_legacy_review_once_and_does_not_erase_it():
         history = client.get(f"/api/v1/incidents/{ident}/reviews").json()
         assert len(history) == 1
         assert history[0]["reviewer"] == "original-reviewer"
+        assert history[0]["reviewedAt"] == "2026-10-31T13:00:00+00:00"
         assert client.get(f"/api/v1/incidents/{ident}").json()["review"] == legacy
         assert post_review(client, ident, "MATERIAL").status_code == 200
         assert len(client.get(f"/api/v1/incidents/{ident}/reviews").json()) == 2
