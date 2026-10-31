@@ -20,6 +20,7 @@ from sqlalchemy.exc import IntegrityError
 
 from triage import assess_log
 from disclosure_templates import build_draft
+from tester_app import create_tester_app
 from contract_schemas import (
     IncidentResponse, AssessmentResponse, DisclosureResponse, ErrorResponse,
     ReviewHistoryResponse, DisclosureHistoryResponse,
@@ -477,3 +478,8 @@ def contract_openapi():
 
 
 app.openapi = contract_openapi
+
+# The independent tester schema is available at /tester/openapi.json. Its
+# default configuration has no outbound gateway or project suite and cannot
+# prepare or execute a target until those adapters are explicitly supplied.
+app.mount("/tester", create_tester_app())

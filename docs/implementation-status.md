@@ -139,19 +139,54 @@ authenticated endpoints were not exercised.
 
 ## Next review stages
 
-1. F-02: implement application accounts and administrator-approved roles, with
+1. T-01 through T-03: finish isolated system setup/report, connect the tester
+   lifecycle to a real approved transport, and implement the agreed outbound
+   project suite. Testing is the current priority. Confirm session routing,
+   fixtures, coverage, retention, access, and timing with the pod.
+2. F-02: implement application accounts and administrator-approved roles, with
    contributor/reviewer/administrator permissions and a protected data boundary.
    Review authority must come from authenticated identity rather than a
    submitted name.
-2. Evidence and analysis schema: agree the company-data ingestion envelope,
+3. Evidence and analysis schema: agree the company-data ingestion envelope,
    preserve evidence/revisions and supported facts, then add advisory summary
    and analysis records. AI remains advisory and must not record a human
    determination. See [the working design](company-data-design.md).
-3. T-01 through T-03: implement isolated system setup/report, tester lifecycle,
-   and outbound suites after specifying session routing, fixtures, coverage,
-   retention, access, and timing. The instructor protocol is checked; the
-   deployed OpenAPI is a current API description, not those missing pod rules.
+The instructor protocol is checked; the deployed OpenAPI is a current API
+description, not the missing pod session/fixture rules. W-01 follows these
+testing and product foundations.
 
 Managed migrations should precede new persistent product schemas. Keep each
 stage as a validated commit/review checkpoint, preserving the existing shared
 API and separating merge/deployment from local implementation.
+
+## Tester protocol foundation - October 31, 2026
+
+Implemented shared control/report models, offline exact approved-target
+admission, and a process-local tester coordinator with injected adapters. The
+main application mounts its independent HTTP controls and OpenAPI at
+`/tester`. The default instance has no target gateway, cases, or approved URLs;
+setup fails closed before any outbound request or ready-session creation.
+
+Mock-target tests exercise the successful setup/run/report flow, error-source
+propagation, concurrent one-run claims, immutable completed/aborted snapshots,
+coverage validation, partial reports, timeout/cancellation recovery, and
+rejection of invalid adapter results. Cancellation before any case is invoked
+records only skipped cases. Component and system coverage remain null/null
+with pending-inventory explanations.
+
+This is partial T-02 work and a shared schema foundation for T-01. Root system
+setup/report, system session storage/routing, real HTTP transport, the pod
+project suite/oracles, inventory mappings, registration, and cross-team runs
+remain pending. Offline URL admission does not resolve DNS or establish live
+network safety. In-memory sessions require a single process and are lost on
+restart. The internal timeout defaults are not registered Render time limits.
+
+The parent incident OpenAPI was compared deeply with the preceding checkpoint
+and is unchanged. See [cross-team testing implementation notes](cross-team-testing.md)
+for exact adapter boundaries, configuration limits, and validation details.
+
+Final local validation: **385 passed** on PostgreSQL 17.4 (7.47s); **383 passed,
+2 PostgreSQL-only skips** on SQLite (7.53s). Both runs retained three existing
+dependency deprecation warnings. The configured Ruff selection, syntax checks
+for all 24 root Python files, and whitespace checks passed. These are regression
+and mock-target results, not real outbound project-suite or deployment evidence.
