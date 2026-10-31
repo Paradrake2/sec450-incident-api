@@ -13,7 +13,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import create_engine, Column, String, Text, DateTime, ForeignKey, CheckConstraint, Boolean, or_, select, delete
+from sqlalchemy import create_engine, Column, String, Text, DateTime, ForeignKey, CheckConstraint, Boolean, or_, select, delete, update
 from sqlalchemy.orm import DeclarativeBase, Session
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
@@ -102,7 +102,7 @@ def stamp(dt):
         return None
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
-    return dt.isoformat()
+    return dt.astimezone(timezone.utc).isoformat()
 
 def related_ids(session, incident_id):
     """Read authoritative link records rather than legacy JSON snapshots."""
@@ -152,6 +152,9 @@ def backfill_legacy_reviews(database_engine: Engine | None = None):
                 continue
             snapshot = loads(incident.review)
             reviewed_at = datetime.fromisoformat(snapshot["reviewedAt"].replace("Z", "+00:00"))
+            if reviewed_at.tzinfo is None:
+                reviewed_at = reviewed_at.replace(tzinfo=timezone.utc)
+            reviewed_at = reviewed_at.astimezone(timezone.utc)
             session.add(ReviewRow(
                 id=str(uuid4()), incident_id=incident.id, decision=snapshot["decision"],
                 reviewer=snapshot["reviewer"], rationale=snapshot.get("rationale"),
@@ -295,7 +298,14 @@ def create_incident(data: CreateIncident, session: Session = Depends(get_session
     if not data.title.strip() or not data.log.strip():
         error("INVALID_REQUEST", "title and log must not be blank", 400)
     now = datetime.now(timezone.utc)
-    row = IncidentRow(id=str(uuid4()), title=data.title, log=data.log, occurred_at=data.occurredAt,
+    # SQLite drops timezone offsets while PostgreSQL normalizes the instant.
+    # Normalize before persistence so both stores retain the same UTC instant.
+    occurred_at = data.occurredAt
+    if occurred_at.tzinfo is None:
+        occurred_at = occurred_at.replace(tzinfo=timezone.utc)
+    else:
+        occurred_at = occurred_at.astimezone(timezone.utc)
+    row = IncidentRow(id=str(uuid4()), title=data.title, log=data.log, occurred_at=occurred_at,
                       created_at=now, source=data.source, state="RECEIVED", related="[]")
     session.add(row)
     session.commit()
@@ -323,8 +333,16 @@ def assess(incident_id: str = PathParam(alias="incidentId"), session: Session = 
     if row.state != "RECEIVED":
         error("INVALID_STATE", "Incident cannot be assessed in its current state", 409)
     value = assess_log(row.log)
-    row.assessment = dumps(value)
-    row.state = "POTENTIALLY_MATERIAL" if value["potentiallyMaterial"] else "UNDER_REVIEW"
+    result = session.execute(
+        update(IncidentRow).where(
+            IncidentRow.id == row.id, IncidentRow.state == "RECEIVED",
+        ).values(
+            assessment=dumps(value),
+            state="POTENTIALLY_MATERIAL" if value["potentiallyMaterial"] else "UNDER_REVIEW",
+        ).execution_options(synchronize_session=False)
+    )
+    if result.rowcount != 1:
+        error("INVALID_STATE", "Incident cannot be assessed in its current state", 409)
     session.commit()
     return value
 
@@ -354,10 +372,21 @@ def review(data: ReviewRequest, incident_id: str = PathParam(alias="incidentId")
     reviewed_at = datetime.now(timezone.utc)
     snapshot = {"decision": data.decision, "reviewer": data.reviewer,
                 "rationale": data.rationale, "reviewedAt": stamp(reviewed_at)}
+    # Apply the transition only if the state read above is still current. On
+    # PostgreSQL a competing update is rechecked after its transaction finishes.
+    # The accepted decision and history insert share this transaction.
+    result = session.execute(
+        update(IncidentRow).where(
+            IncidentRow.id == row.id, IncidentRow.state == row.state,
+        ).values(
+            review=dumps(snapshot),
+            state="MATERIAL_CONFIRMED" if data.decision == "MATERIAL" else "NOT_MATERIAL",
+        ).execution_options(synchronize_session=False)
+    )
+    if result.rowcount != 1:
+        error("INVALID_STATE", "Review is not permitted in current state", 409)
     session.add(ReviewRow(id=str(uuid4()), incident_id=row.id, decision=data.decision,
                           reviewer=data.reviewer, rationale=data.rationale, reviewed_at=reviewed_at))
-    row.review = dumps(snapshot)  # Backward-compatible most recent review.
-    row.state = "MATERIAL_CONFIRMED" if data.decision == "MATERIAL" else "NOT_MATERIAL"
     session.commit()  # Record the decision and new state in one transaction.
     return serialize(row, session)
 

@@ -1,37 +1,33 @@
 """Database-selection regressions using disposable local stores only."""
 
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack
 from datetime import datetime, timezone
 from json import dumps, loads
 
 import pytest
 from fastapi import Request
-from sqlalchemy import create_engine, inspect, select
+from sqlalchemy import inspect, select
 from sqlalchemy.orm import Session
 from starlette.datastructures import State
 
 # Import the existing test bootstrap first, never the developer database.
 from test_api import TestClient, app, new_incident
 import main
+from testing_database import disposable_engine
 
 
 @pytest.fixture
 def stores(tmp_path, monkeypatch):
-    databases = {
-        name: create_engine(
-            f"sqlite:///{(tmp_path / (name + '.db')).as_posix()}",
-            connect_args={"check_same_thread": False},
-        )
-        for name in ("normal", "alternate", "other")
-    }
-    # Preserve the old tests' imported engine while keeping these tests local.
-    monkeypatch.setattr(main, "engine", databases["normal"])
-    monkeypatch.setattr(app, "state", State({"database_engine": databases["normal"]}))
-    try:
+    with ExitStack() as stack:
+        databases = {
+            name: stack.enter_context(disposable_engine(tmp_path))
+            for name in ("normal", "alternate", "other")
+        }
+        # Preserve the old tests' imported engine while keeping these tests local.
+        monkeypatch.setattr(main, "engine", databases["normal"])
+        monkeypatch.setattr(app, "state", State({"database_engine": databases["normal"]}))
         yield databases
-    finally:
-        for database in databases.values():
-            database.dispose()
 
 
 def snapshot(database):
