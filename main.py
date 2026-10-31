@@ -361,7 +361,7 @@ def serialize_review(row):
             "rationale": row.rationale, "reviewedAt": stamp(row.reviewed_at)}
 
 
-@app.post("/api/v1/incidents/{incidentId}/review", response_model=IncidentResponse, responses={**ERROR_400, **ERROR_404, **ERROR_409, **ERROR_500})
+@app.post("/api/v1/incidents/{incidentId}/review", response_model=IncidentResponse, responses={**ERROR_400, **ERROR_404, **ERROR_409, **ERROR_415, **ERROR_500})
 def review(data: ReviewRequest, incident_id: str = PathParam(alias="incidentId"), session: Session = Depends(get_session)):
     if not data.reviewer.strip():
         error("INVALID_REQUEST", "reviewer must not be blank", 400, "reviewer")
@@ -401,7 +401,7 @@ def list_reviews(incident_id: str = PathParam(alias="incidentId"), session: Sess
     )
     return [serialize_review(item) for item in reviews]
 
-@app.post("/api/v1/incidents/{incidentId}/related", response_model=IncidentResponse, responses={**ERROR_400, **ERROR_404, **ERROR_409, **ERROR_500})
+@app.post("/api/v1/incidents/{incidentId}/related", response_model=IncidentResponse, responses={**ERROR_400, **ERROR_404, **ERROR_409, **ERROR_415, **ERROR_500})
 def relate(data: LinkRequest, incident_id: str = PathParam(alias="incidentId"), session: Session = Depends(get_session)):
     row = get_incident(session, incident_id)
     other = get_incident(session, data.relatedIncidentId)
