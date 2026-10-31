@@ -6,7 +6,7 @@ Updated October 31, 2026. This log records repository work separately from the p
 
 - Starting branch: `main`; clean working tree.
 - Starting commit: `705dd115c174f7c64f317567364429d5c930694e`, matching the plan's pinned review.
-- Working branch: `codex/database-foundation`.
+- Working branch: `phase4/database-foundation`.
 - No repository or ancestor `AGENTS.md` was found in the inspected ancestry.
 - First implementation slice: B-01 baseline/specification reconciliation and B-02 consistent database access. Later course testing, product UI, evidence, AI, and deadline work remain separate tickets.
 - The architecture image describes product intent: preserve evidence, support advisory analysis and human decisions, prepare non-final drafts, and record history throughout. It does not establish implemented external integrations or authorize automatic filing.
@@ -25,7 +25,7 @@ The original instructor sources confirm separate logical system/tester interface
 This validated B-01/B-02 checkpoint was committed through the user's connected
 GitHub account, `Krish9Patel`, as
 [`e0cfc80e6076279f8543ec8780f122fe16ceed01`](https://github.com/Paradrake2/sec450-incident-api/commit/e0cfc80e6076279f8543ec8780f122fe16ceed01)
-on `codex/database-foundation` for incremental review. No schema migration,
+on the branch now named `phase4/database-foundation` for incremental review. No schema migration,
 merge, or deployment was performed. The Render deployment SHA and live
 PostgreSQL behavior were not verified by this initial foundation slice.
 
