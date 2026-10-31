@@ -1,19 +1,21 @@
 """SEC450 incident evidence API (educational, synthetic data only)."""
 import logging
 import os
+from collections.abc import Iterator
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Literal
 from uuid import uuid4
 from json import dumps, loads, JSONDecodeError
 
-from fastapi import FastAPI, Request, HTTPException, Path as PathParam
+from fastapi import Depends, FastAPI, Request, HTTPException, Path as PathParam
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import create_engine, Column, String, Text, DateTime, ForeignKey, CheckConstraint, Boolean, or_, select, delete
 from sqlalchemy.orm import DeclarativeBase, Session
+from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 
 from triage import assess_log
@@ -133,13 +135,13 @@ def get_incident(session, incident_id):
         error("INCIDENT_NOT_FOUND", "No incident exists with the supplied identifier", 404)
     return obj
 
-def backfill_legacy_reviews():
+def backfill_legacy_reviews(database_engine: Engine | None = None):
     """Preserve the latest existing review when upgrading a Phase 3 database.
 
     Previous overwritten decisions cannot be reconstructed. This is idempotent
     for normal single-worker startup; new reviews are inserted transactionally.
     """
-    with Session(engine) as session:
+    with Session(engine if database_engine is None else database_engine) as session:
         legacy_incidents = session.scalars(select(IncidentRow).where(IncidentRow.review.isnot(None)))
         count = 0
         for incident in legacy_incidents:
@@ -161,14 +163,14 @@ def backfill_legacy_reviews():
             log.info("backfilled %s legacy review snapshots", count)
 
 
-def backfill_legacy_relations():
+def backfill_legacy_relations(database_engine: Engine | None = None):
     """One-time compatible import from old symmetric or asymmetric JSON lists.
 
     Existing serialized snapshots remain untouched. A valid legacy link is
     imported once even if both incident rows reference each other. Normal
     application reads now use the normalized relationship table exclusively.
     """
-    with Session(engine) as session:
+    with Session(engine if database_engine is None else database_engine) as session:
         incidents = session.scalars(select(IncidentRow)).all()
         valid_ids = {row.id for row in incidents}
         existing_pairs = {
@@ -200,15 +202,38 @@ def backfill_legacy_relations():
             log.info("backfilled %s legacy incident relations", added)
 
 
+def initialize_database(database_engine: Engine) -> None:
+    """Prepare only the explicitly selected store, including legacy imports."""
+    Base.metadata.create_all(database_engine)
+    backfill_legacy_reviews(database_engine)
+    backfill_legacy_relations(database_engine)
+
+
 @asynccontextmanager
 async def lifespan(app):
-    Base.metadata.create_all(engine)
-    backfill_legacy_reviews()
-    backfill_legacy_relations()
-    log.info("service ready database=%s", "postgresql" if DB_URL.startswith("postgresql") else "sqlite")
+    database_engine = app.state.database_engine
+    initialize_database(database_engine)
+    log.info("service ready database=%s", database_engine.dialect.name)
     yield
 
 app = FastAPI(title="SEC Cybersecurity Incident Testing API", version="1.0.0", lifespan=lifespan)
+app.state.database_engine = engine
+
+
+def get_engine(request: Request) -> Engine:
+    """Select server-configured storage; request data cannot choose a database."""
+    return request.app.state.database_engine
+
+
+def get_session(database_engine: Engine = Depends(get_engine)) -> Iterator[Session]:
+    """One session per request; close rolls back any uncommitted work.
+
+    Routes own their commits so changes fail before a response is returned.
+    Lifespan uses the app's engine directly; dependency overrides affect requests
+    only and must prepare any alternate store explicitly.
+    """
+    with Session(database_engine) as session:
+        yield session
 
 # Declared responses keep Swagger and downstream schema checks aligned with
 # the existing structured-error handler (which returns 400, not FastAPI's 422).
@@ -256,57 +281,52 @@ def health():
     return {"status": "ok"}
 
 @app.post("/api/v1/test/reset", status_code=204, responses=ERROR_500)
-def reset():
+def reset(session: Session = Depends(get_session)):
     # WARNING: Spec requires unauthenticated reset. Deploy only with synthetic demo data.
-    with Session(engine) as session:
-        session.execute(delete(DisclosureRow))
-        session.execute(delete(RelationRow))
-        session.execute(delete(ReviewRow))
-        session.execute(delete(IncidentRow))
-        session.commit()
+    session.execute(delete(DisclosureRow))
+    session.execute(delete(RelationRow))
+    session.execute(delete(ReviewRow))
+    session.execute(delete(IncidentRow))
+    session.commit()
     return Response(status_code=204)
 
 @app.post("/api/v1/incidents", status_code=201, response_model=IncidentResponse, responses={**ERROR_400, **ERROR_415, **ERROR_500})
-def create_incident(data: CreateIncident):
+def create_incident(data: CreateIncident, session: Session = Depends(get_session)):
     if not data.title.strip() or not data.log.strip():
         error("INVALID_REQUEST", "title and log must not be blank", 400)
     now = datetime.now(timezone.utc)
     row = IncidentRow(id=str(uuid4()), title=data.title, log=data.log, occurred_at=data.occurredAt,
                       created_at=now, source=data.source, state="RECEIVED", related="[]")
-    with Session(engine) as session:
-        session.add(row)
-        session.commit()
-        session.refresh(row)
-        return serialize(row, session)
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return serialize(row, session)
 
 STATES = {"RECEIVED", "UNDER_REVIEW", "POTENTIALLY_MATERIAL", "NOT_MATERIAL", "MATERIAL_CONFIRMED", "CLOSED"}
 
 @app.get("/api/v1/incidents", response_model=list[IncidentResponse], responses={**ERROR_400, **ERROR_500})
-def list_incidents(state: str | None = None):
+def list_incidents(state: str | None = None, session: Session = Depends(get_session)):
     if state is not None and state not in STATES:
         error("INVALID_REQUEST", "Unknown incident state", 400, "state")
-    with Session(engine) as session:
-        query = select(IncidentRow).order_by(IncidentRow.created_at, IncidentRow.id)
-        if state is not None:
-            query = query.where(IncidentRow.state == state)
-        return [serialize(row, session) for row in session.scalars(query)]
+    query = select(IncidentRow).order_by(IncidentRow.created_at, IncidentRow.id)
+    if state is not None:
+        query = query.where(IncidentRow.state == state)
+    return [serialize(row, session) for row in session.scalars(query)]
 
 @app.get("/api/v1/incidents/{incidentId}", response_model=IncidentResponse, responses={**ERROR_404, **ERROR_500})
-def get_one(incident_id: str = PathParam(alias="incidentId")):
-    with Session(engine) as session:
-        return serialize(get_incident(session, incident_id), session)
+def get_one(incident_id: str = PathParam(alias="incidentId"), session: Session = Depends(get_session)):
+    return serialize(get_incident(session, incident_id), session)
 
 @app.post("/api/v1/incidents/{incidentId}/assessment", response_model=AssessmentResponse, responses={**ERROR_404, **ERROR_409, **ERROR_500})
-def assess(incident_id: str = PathParam(alias="incidentId")):
-    with Session(engine) as session:
-        row = get_incident(session, incident_id)
-        if row.state != "RECEIVED":
-            error("INVALID_STATE", "Incident cannot be assessed in its current state", 409)
-        value = assess_log(row.log)
-        row.assessment = dumps(value)
-        row.state = "POTENTIALLY_MATERIAL" if value["potentiallyMaterial"] else "UNDER_REVIEW"
-        session.commit()
-        return value
+def assess(incident_id: str = PathParam(alias="incidentId"), session: Session = Depends(get_session)):
+    row = get_incident(session, incident_id)
+    if row.state != "RECEIVED":
+        error("INVALID_STATE", "Incident cannot be assessed in its current state", 409)
+    value = assess_log(row.log)
+    row.assessment = dumps(value)
+    row.state = "POTENTIALLY_MATERIAL" if value["potentiallyMaterial"] else "UNDER_REVIEW"
+    session.commit()
+    return value
 
 # Phase 2 state machine: assessments are advisory; human review is final.
 # NOT_MATERIAL may later escalate to MATERIAL. Confirmed material cannot be
@@ -324,56 +344,53 @@ def serialize_review(row):
 
 
 @app.post("/api/v1/incidents/{incidentId}/review", response_model=IncidentResponse, responses={**ERROR_400, **ERROR_404, **ERROR_409, **ERROR_500})
-def review(data: ReviewRequest, incident_id: str = PathParam(alias="incidentId")):
+def review(data: ReviewRequest, incident_id: str = PathParam(alias="incidentId"), session: Session = Depends(get_session)):
     if not data.reviewer.strip():
         error("INVALID_REQUEST", "reviewer must not be blank", 400, "reviewer")
-    with Session(engine) as session:
-        row = get_incident(session, incident_id)
-        if data.decision not in ALLOWED_REVIEW_DECISIONS.get(row.state, ()):
-            error("INVALID_STATE", "Review is not permitted in current state", 409)
+    row = get_incident(session, incident_id)
+    if data.decision not in ALLOWED_REVIEW_DECISIONS.get(row.state, ()):
+        error("INVALID_STATE", "Review is not permitted in current state", 409)
 
-        reviewed_at = datetime.now(timezone.utc)
-        snapshot = {"decision": data.decision, "reviewer": data.reviewer,
-                    "rationale": data.rationale, "reviewedAt": stamp(reviewed_at)}
-        session.add(ReviewRow(id=str(uuid4()), incident_id=row.id, decision=data.decision,
-                              reviewer=data.reviewer, rationale=data.rationale, reviewed_at=reviewed_at))
-        row.review = dumps(snapshot)  # Backward-compatible most recent review.
-        row.state = "MATERIAL_CONFIRMED" if data.decision == "MATERIAL" else "NOT_MATERIAL"
-        session.commit()  # Record the decision and new state in one transaction.
-        return serialize(row, session)
+    reviewed_at = datetime.now(timezone.utc)
+    snapshot = {"decision": data.decision, "reviewer": data.reviewer,
+                "rationale": data.rationale, "reviewedAt": stamp(reviewed_at)}
+    session.add(ReviewRow(id=str(uuid4()), incident_id=row.id, decision=data.decision,
+                          reviewer=data.reviewer, rationale=data.rationale, reviewed_at=reviewed_at))
+    row.review = dumps(snapshot)  # Backward-compatible most recent review.
+    row.state = "MATERIAL_CONFIRMED" if data.decision == "MATERIAL" else "NOT_MATERIAL"
+    session.commit()  # Record the decision and new state in one transaction.
+    return serialize(row, session)
 
 
 @app.get("/api/v1/incidents/{incidentId}/reviews", response_model=list[ReviewHistoryResponse], responses={**ERROR_404, **ERROR_500})
-def list_reviews(incident_id: str = PathParam(alias="incidentId")):
+def list_reviews(incident_id: str = PathParam(alias="incidentId"), session: Session = Depends(get_session)):
     """Optional read-only history endpoint; original Incident response is unchanged."""
-    with Session(engine) as session:
-        get_incident(session, incident_id)
-        reviews = session.scalars(
-            select(ReviewRow).where(ReviewRow.incident_id == incident_id)
-            .order_by(ReviewRow.reviewed_at, ReviewRow.id)
-        )
-        return [serialize_review(item) for item in reviews]
+    get_incident(session, incident_id)
+    reviews = session.scalars(
+        select(ReviewRow).where(ReviewRow.incident_id == incident_id)
+        .order_by(ReviewRow.reviewed_at, ReviewRow.id)
+    )
+    return [serialize_review(item) for item in reviews]
 
 @app.post("/api/v1/incidents/{incidentId}/related", response_model=IncidentResponse, responses={**ERROR_400, **ERROR_404, **ERROR_409, **ERROR_500})
-def relate(data: LinkRequest, incident_id: str = PathParam(alias="incidentId")):
-    with Session(engine) as session:
-        row = get_incident(session, incident_id)
-        other = get_incident(session, data.relatedIncidentId)
-        if row.state == "CLOSED" or other.state == "CLOSED":
-            error("INVALID_STATE", "Closed incidents cannot be modified", 409)
-        if row.id == other.id:
-            error("DUPLICATE_RELATION", "Relation already exists or relates incident to itself", 409)
-        a, b = sorted((row.id, other.id))
-        if session.get(RelationRow, (a, b)) is not None:
-            error("DUPLICATE_RELATION", "Relation already exists or relates incident to itself", 409)
-        session.add(RelationRow(incident_a_id=a, incident_b_id=b))
-        try:
-            session.commit()
-        except IntegrityError:
-            # Unique composite key protects against simultaneous duplicate links.
-            session.rollback()
-            error("DUPLICATE_RELATION", "Relation already exists or relates incident to itself", 409)
-        return serialize(row, session)
+def relate(data: LinkRequest, incident_id: str = PathParam(alias="incidentId"), session: Session = Depends(get_session)):
+    row = get_incident(session, incident_id)
+    other = get_incident(session, data.relatedIncidentId)
+    if row.state == "CLOSED" or other.state == "CLOSED":
+        error("INVALID_STATE", "Closed incidents cannot be modified", 409)
+    if row.id == other.id:
+        error("DUPLICATE_RELATION", "Relation already exists or relates incident to itself", 409)
+    a, b = sorted((row.id, other.id))
+    if session.get(RelationRow, (a, b)) is not None:
+        error("DUPLICATE_RELATION", "Relation already exists or relates incident to itself", 409)
+    session.add(RelationRow(incident_a_id=a, incident_b_id=b))
+    try:
+        session.commit()
+    except IntegrityError:
+        # Unique composite key protects against simultaneous duplicate links.
+        session.rollback()
+        error("DUPLICATE_RELATION", "Relation already exists or relates incident to itself", 409)
+    return serialize(row, session)
 
 def serialize_disclosure(row):
     """Preserve the shared four-field DisclosureDraft response format."""
@@ -382,39 +399,37 @@ def serialize_disclosure(row):
 
 
 @app.post("/api/v1/incidents/{incidentId}/disclosure", response_model=DisclosureResponse, responses={**ERROR_404, **ERROR_409, **ERROR_500})
-def disclosure(incident_id: str = PathParam(alias="incidentId")):
-    with Session(engine) as session:
-        row = get_incident(session, incident_id)
-        if row.state != "MATERIAL_CONFIRMED" or not row.review:
-            error("INVALID_STATE", "A material human review is required before drafting", 409)
-        # Human review is submitted evidence, not verified identity or legal approval.
-        review_data = loads(row.review)
-        if review_data.get("decision") != "MATERIAL":
-            error("INVALID_STATE", "A material human review is required before drafting", 409)
-        draft = build_draft(
-            incident_id=row.id, title=row.title, log=row.log,
-            occurred_at=stamp(row.occurred_at), created_at=stamp(row.created_at),
-            source=row.source, review=review_data,
-        )
-        record = DisclosureRow(
-            id=str(uuid4()), incident_id=row.id, draft=draft,
-            generated_at=datetime.now(timezone.utc), final=False,
-        )
-        session.add(record)
-        session.commit()
-        return serialize_disclosure(record)
+def disclosure(incident_id: str = PathParam(alias="incidentId"), session: Session = Depends(get_session)):
+    row = get_incident(session, incident_id)
+    if row.state != "MATERIAL_CONFIRMED" or not row.review:
+        error("INVALID_STATE", "A material human review is required before drafting", 409)
+    # Human review is submitted evidence, not verified identity or legal approval.
+    review_data = loads(row.review)
+    if review_data.get("decision") != "MATERIAL":
+        error("INVALID_STATE", "A material human review is required before drafting", 409)
+    draft = build_draft(
+        incident_id=row.id, title=row.title, log=row.log,
+        occurred_at=stamp(row.occurred_at), created_at=stamp(row.created_at),
+        source=row.source, review=review_data,
+    )
+    record = DisclosureRow(
+        id=str(uuid4()), incident_id=row.id, draft=draft,
+        generated_at=datetime.now(timezone.utc), final=False,
+    )
+    session.add(record)
+    session.commit()
+    return serialize_disclosure(record)
 
 
 @app.get("/api/v1/incidents/{incidentId}/disclosures", response_model=list[DisclosureHistoryResponse], responses={**ERROR_404, **ERROR_500})
-def list_disclosures(incident_id: str = PathParam(alias="incidentId")):
+def list_disclosures(incident_id: str = PathParam(alias="incidentId"), session: Session = Depends(get_session)):
     """Optional history endpoint; not part of the common pod contract."""
-    with Session(engine) as session:
-        get_incident(session, incident_id)
-        drafts = session.scalars(
-            select(DisclosureRow).where(DisclosureRow.incident_id == incident_id)
-            .order_by(DisclosureRow.generated_at, DisclosureRow.id)
-        )
-        return [{"id": d.id, **serialize_disclosure(d)} for d in drafts]
+    get_incident(session, incident_id)
+    drafts = session.scalars(
+        select(DisclosureRow).where(DisclosureRow.incident_id == incident_id)
+        .order_by(DisclosureRow.generated_at, DisclosureRow.id)
+    )
+    return [{"id": d.id, **serialize_disclosure(d)} for d in drafts]
 
 
 # FastAPI automatically documents validation as 422 even with a custom 400
