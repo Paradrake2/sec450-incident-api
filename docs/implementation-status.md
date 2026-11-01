@@ -312,3 +312,44 @@ Ruff and whitespace checks passed. Synthetic results are in the excluded local
 team folder. No production/deployed target, database, merge, or deployment was
 used. The optional server binds only 127.0.0.1:8001 with one process and loses
 sessions on restart.
+
+## Recovered Phase 2 contract and real operation audit - October 31, 2026
+
+The four supplied phase PDFs were reviewed as reference evidence, separating
+assignment prompts, submitted designs, reported historical results, and fresh
+observations. Phase2_Gradescope Section 5.1 supplies the original nine-operation
+OpenAPI 3.1.0 / version 1.0.0 contract. This resolves the missing historical
+baseline noted earlier; current pod agreement and deployed conformance remain
+unverified. Phase 3 also supplies historical test evidence and validation-order
+claims, not a new bidirectional acceptance result.
+
+Preserved a normalized contract under `contracts/`, without the PDFs, grades,
+or participant information. Independent JSON Schema response checks enforce
+types, dates, constants, internal references, and empty 204 bodies while
+keeping diagnostics free of payload values. The baseline is not regenerated
+from current implementation models and does not silently absorb differences.
+
+Added `python -m contract_audit --format markdown` (JSON by default). It runs
+real incident routes in a disposable local store, includes all nine operations
+and requirement mappings, and reports absent/error checks honestly. It accepts
+no remote URL and does not load application `.env` credentials. Explicit local
+`TEST_DATABASE_URL` selects guarded PostgreSQL schemas; otherwise it uses
+temporary SQLite. Exit 1 indicates observed differences, not a broken auditor.
+
+The first PostgreSQL audit recorded **44 checks: 38 passed, 6 failed**:
+explicit null create-source, timezone-free occurredAt, null review-rationale,
+lookup-before-field-validation for review and related routes, and permitted
+additional properties on related requests. These are recorded, not fixed in
+this checkpoint. Shared-fixture restoration stays partial; unexercised 500/503
+paths stay unverified. The supplied positive assessment example is a separate
+current-heuristic mismatch because the actual shared label package is absent.
+
+Validation: **686 PostgreSQL tests passed** (16.33s); **683 SQLite passes,
+3 PostgreSQL-only skips** (13.54s), with three existing warnings. Fifty schema
+and nine auditor regressions were added; those 59 also passed after formatting.
+All 44 Python syntax targets, configured Ruff, dependency, and whitespace checks
+passed. The new work is isolated on `phase4/contract-conformance`, based on the
+prior API-import/walkthrough checkpoint. No application behavior, deployed
+target, normal database, external message, or filing was changed. PDFs and
+local generated reports remain excluded. See the
+[reconciliation record](phase2-contract-reconciliation.md).

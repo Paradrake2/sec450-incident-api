@@ -203,6 +203,22 @@ for request bodies and expected responses. The normal `main:app` tester remains
 unconfigured while system controls, session fixtures/routing, real gateway/cases,
 coverage, and deployment are still pending.
 
+The recovered Phase 2 common contract is now preserved separately from generated
+OpenAPI. To audit all nine real incident operations in a disposable local store:
+
+```powershell
+.\.venv\Scripts\python.exe -m contract_audit --format markdown
+```
+
+This command reports observed success/error checks, requirement mappings, and
+unverified statuses; it does not accept a remote target or claim cross-team
+conformance. Exit `1` means observed differences were found, while `2` indicates
+configuration failure. Missing shared fixtures and coverage stay unverified.
+See [contract reconciliation and known differences](docs/phase2-contract-reconciliation.md)
+and the [historical contract baseline](contracts/README.md). The local pytest
+suite checks the auditor itself; a passing regression run does not erase the
+contract differences reported by the audit.
+
 **Recorded Phase 3 deployed-service check:** October 18, 2026, approximately 23:57 UTC — **23 run, 23 passed, 0 failed**. Checks included service availability, creation/retrieval, state filtering, positive/negative assessments, human review, relations, draft generation, and failure responses (`400`, `404`, `409`, `415`). The run was made against `https://sec450-incident-api.onrender.com`. This is a **custom deployed API test suite**, not a claim that the complete instructor-provided OpenAPI acceptance suite or security/performance tests have passed. The matching `sec450-test-results.json` can be retained as submission evidence.
 
 **Cross-team manual checks:** Team 102 reported **4/4** successful checks against this service (connectivity, create, list, retrieve) on October 18, 2026. Team 105's initial six queries against Team 102's separate read-only API yielded one successful health check and five authenticated calls blocked by `401` (no valid test credentials); those protected functions were therefore not verified. Neither result proves complete bidirectional contract coverage.
