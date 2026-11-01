@@ -264,3 +264,26 @@ raw lines, integrity, collection gaps, and previous cluster ID. This confirms
 the minimal envelope for that sample, not the full API or body contract.
 Only redacted schema diagnostics were emitted; no payload was retained or
 imported, and no application database or deployed service was modified.
+
+## Log-feed clarification - October 31, 2026
+
+The user supplied a screenshot identifying `/v1/logs`, Bearer authentication,
+and a 60-request/minute limit. That endpoint is absent from the supplied guide,
+which documents reports, clusters, and events. Two authenticated HTTPS checks
+(one original-path request and one `limit=1` request) succeeded. The root has
+query/count/collection_gaps/logs; the first sampled entry matches neither our
+incident schema nor numeric report_id/object body. Known sampled fields include
+string ts/host/source and nullable client_ip/username. No payload was saved or
+imported. An alias relationship with `/v1/events` has not been established.
+
+Added `python -m team102_probe --resource logs` for one bounded HTTPS list GET,
+known-field type diagnostics, and inspection of the first log only. Reports
+remain the default resource; report IDs are rejected in logs mode before HTTP.
+The stated rate limit was not load-tested; there is no polling or automatic
+retry. Source-feed confirmation still does not establish the course system
+controls or pod fixture/session rules.
+
+Full local verification: **627 PostgreSQL passes** (22.51s); **624 SQLite
+passes, 3 PostgreSQL-only skips** (12.77s), with three existing warnings. This
+adds eight probe and three client cases. All 39 Python files compiled; Ruff,
+dependency validation, and whitespace checks passed. No merge or deployment.

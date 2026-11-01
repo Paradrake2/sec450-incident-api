@@ -80,7 +80,7 @@ the entire API, endpoint behavior, error responses, or common contract conforms.
 | `0` | An incident schema match was found, including a nested or ambiguous match; inspect the classification and paths. |
 | `1` | Configuration, identifier, or HTTP/response error prevented the comparison. |
 | `2` | Guide-envelope match only, or an unsupported response shape. |
-| `3` | No report sample was available. |
+| `3` | No source sample was available. |
 
 Synthetic tests cover the probe's validation behavior. On October 31, 2026,
 one authenticated list GET and one detail GET returned a `guide_report` match,
@@ -89,6 +89,40 @@ ai_assessment, matched_rule, requester, data_destination, raw_lines, integrity,
 collection_gaps, and previous_cluster_id. Only redacted diagnostics were emitted;
 the payload was not saved or imported. Source-to-incident field mapping remains
 deliberate follow-up work; this sample is not full contract conformance evidence.
+
+### Log-feed probe
+
+The user also supplied `/v1/logs`, which is absent from the supplied Query API
+guide. Although the shared screenshot used an HTTP URL, the authenticated
+HTTPS endpoint responded successfully. One response had a root envelope with
+`query`, `count`, `collection_gaps`, and `logs`; its first log entry matched
+neither our `IncidentResponse` nor the report parser's `report_id`/`body` shape.
+This is a distinct source response. No alias or replacement relationship with
+the documented `/v1/events` or `/v1/reports` endpoints has been confirmed.
+
+```powershell
+.\.venv\Scripts\python.exe -m team102_probe --resource logs
+```
+
+This mode makes one fixed-origin HTTPS `GET /v1/logs?limit=1` and inspects the
+first log entry using the same redacted field-type and schema diagnostics.
+It does not fetch report details, import logs, or infer incident fields. The
+default resource remains reports. The live check retained no payload and
+performed no database writes; complete log-field, filtering, pagination, and
+identity semantics remain unconfirmed.
+
+An ordinary log sample currently returns exit `2`: the HTTP read succeeded,
+but the sample matches neither incident JSON Schema nor the minimal report
+envelope. That exit does not indicate an authentication or transport failure.
+`--report-id` applies only to report mode and is rejected for logs before any
+request is made. The guide's event field names help label known types; they
+do not establish a schema for this newly supplied logs endpoint.
+
+The screenshot and supplied guide state a limit of 60 requests per minute per
+key. This is a request limit, not the number of logs produced or returned, and
+was not independently load-tested. The probe does not poll, automatically
+retry, or increase the limit. Rate-limit responses retain bounded Retry-After
+metadata for a later operator-controlled request.
 
 ## Explicit database migration
 
@@ -176,7 +210,7 @@ read-only probe fetched one live sample without importing or saving its payload.
 
 The client has one fixed HTTPS origin, sends the API key only as a Bearer
 header, verifies TLS, ignores environment proxies, and never follows redirects.
-It performs only GET requests to the fixed report-list and report-detail paths.
+It performs only GET requests to fixed report-list, report-detail, and log-list paths.
 Shape-neutral reads support the probe, while imports retain strict provisional
 report-envelope validation. Explicit HTTPX operation timeouts
 and a 2 MiB decoded body limit bound individual waits and accepted payloads;

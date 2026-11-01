@@ -320,7 +320,7 @@ def test_shape_neutral_detail_rejects_unsafe_identifiers_before_transport(report
         client.read_report(report_id)
 
 
-@pytest.mark.parametrize("method", ["read_report", "read_reports_sample"])
+@pytest.mark.parametrize("method", ["read_report", "read_reports_sample", "read_logs_sample"])
 def test_shape_neutral_reads_keep_transport_size_and_json_guards(method):
     with Team102Client(_KEY, transport=_transport_response(content=b'{"secret": NaN}')) as client:
         with pytest.raises(SourceApiError, match="unsupported JSON"):
@@ -335,3 +335,43 @@ def test_import_fetch_still_rejects_incident_shaped_response():
         assert client.read_report(42).raw_content == b'{"id":"incident-42"}'
         with pytest.raises(SourceApiError, match="unsupported report response"):
             client.fetch_report(42)
+
+
+def test_logs_sample_uses_one_fixed_https_get_and_preserves_raw_shape():
+    raw = b'{"logs":[{"source":"synthetic","message":"source log"}],"count":1}'
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        assert request.method == "GET"
+        assert str(request.url) == "https://seclog.redinbo.win/v1/logs?limit=1"
+        assert request.headers["Authorization"] == f"Bearer {_KEY}"
+        assert request.content == b""
+        return httpx.Response(200, content=raw, headers={"Content-Type": "application/json"})
+
+    with Team102Client(_KEY, transport=httpx.MockTransport(handler)) as client:
+        result = client.read_logs_sample()
+    assert result.raw_content == raw
+    assert result.source_url == "https://seclog.redinbo.win/v1/logs?limit=1"
+    assert result.fetched_at.tzinfo == UTC
+    assert len(requests) == 1
+
+
+def test_logs_sample_keeps_sanitized_rate_limit_metadata_without_retry():
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(
+            429, content=b'PRIVATE UPSTREAM CONTENT', headers={"Retry-After": "60"},
+        )
+
+    with Team102Client(_KEY, transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(SourceApiError) as caught:
+            client.read_logs_sample()
+    assert caught.value.kind == "rate_limit"
+    assert caught.value.status_code == 429
+    assert caught.value.retry_after_seconds == 60
+    assert "PRIVATE" not in str(caught.value)
+    assert _KEY not in str(caught.value)
+    assert len(requests) == 1

@@ -1,4 +1,4 @@
-"""Bounded, manual-only access to Team 102's read-only report endpoint.
+"""Bounded, manual-only access to Team 102's read-only report and log feeds.
 
 Shape-neutral reads support inspecting a single source sample. Imports retain
 the provisional identity/body boundary in team102_contract; no polling
@@ -57,7 +57,7 @@ def _check_status(response: httpx.Response) -> None:
     if status in (401, 403):
         kind, message = "authentication", "Team 102 rejected the API credentials"
     elif status == 404:
-        kind, message = "not_found", "Team 102 did not find that report"
+        kind, message = "not_found", "Team 102 did not find that source resource"
     elif status == 429:
         raise SourceApiError(
             "rate_limit", "Team 102 rate limited the request",
@@ -65,14 +65,14 @@ def _check_status(response: httpx.Response) -> None:
             retry_after_seconds=_retry_after_seconds(response.headers.get("Retry-After")),
         )
     elif 400 <= status <= 599:
-        kind, message = "upstream", "Team 102 could not complete the report request"
+        kind, message = "upstream", "Team 102 could not complete the source request"
     else:
         kind, message = "invalid_response", "Team 102 returned an unsupported HTTP response"
     raise SourceApiError(kind, message, status_code=status)
 
 
 class Team102Client:
-    """Read source reports; never follows redirects or retries.
+    """Read source reports/logs; never follows redirects or retries.
 
     Credentials are opaque header values: no key-prefix assumption is made.
     TLS verification stays enabled; proxy/environment settings are not trusted.
@@ -157,6 +157,10 @@ class Team102Client:
         """Read a list sample with limit=1; do not infer or traverse its shape."""
         return self._read(f"{SOURCE_BASE_URL}/v1/reports?limit=1")
 
+    def read_logs_sample(self) -> SourceRead:
+        """Read a log list sample without mapping its entries to reports."""
+        return self._read(f"{SOURCE_BASE_URL}/v1/logs?limit=1")
+
     def _read(self, url: str) -> SourceRead:
         """Apply the same transport bounds before examining any JSON shape."""
         try:
@@ -167,13 +171,13 @@ class Team102Client:
                     media_type.startswith("application/") and media_type.endswith("+json")
                 ):
                     raise SourceApiError(
-                        "invalid_response", "Team 102 did not return a JSON report"
+                        "invalid_response", "Team 102 did not return JSON"
                     )
                 content = bytearray()
                 for chunk in response.iter_bytes(chunk_size=64 * 1024):
                     if len(chunk) > self._max_response_bytes - len(content):
                         raise SourceApiError(
-                            "invalid_response", "Team 102 report exceeds the response size limit"
+                            "invalid_response", "Team 102 source response exceeds the size limit"
                         )
                     content.extend(chunk)
                 raw_content = bytes(content)
@@ -188,10 +192,10 @@ class Team102Client:
                     request_id=request_id,
                 )
         except httpx.TimeoutException:
-            raise SourceApiError("timeout", "Team 102 report request timed out") from None
+            raise SourceApiError("timeout", "Team 102 source request timed out") from None
         except httpx.DecodingError:
             raise SourceApiError(
                 "invalid_response", "Team 102 returned an invalid encoded response"
             ) from None
         except httpx.RequestError:
-            raise SourceApiError("transport", "Team 102 report request could not connect") from None
+            raise SourceApiError("transport", "Team 102 source request could not connect") from None

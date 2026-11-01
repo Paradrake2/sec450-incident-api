@@ -127,6 +127,8 @@ It prints redacted schema diagnostics and makes at most two GET requests;
 guide's numeric `report_id`/object `body` envelope, not our `IncidentResponse`.
 This establishes that sample's shape, not full source-contract conformance.
 The API key belongs only in ignored local secrets.
+Use `python -m team102_probe --resource logs` to inspect the separate log feed
+with one bounded HTTPS GET; it does not import logs or infer incident records.
 See [API import setup and limits](docs/team102-api-import.md) and
 [company-data and reviewer-access design](docs/company-data-design.md).
 The report-feed integration and course cross-team testing remain separate.

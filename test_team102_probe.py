@@ -45,6 +45,10 @@ class FakeClient:
         self.calls.append(("detail", report_id))
         return source_read(self.detail)
 
+    def read_logs_sample(self):
+        self.calls.append(("logs",))
+        return source_read(self.listing)
+
 
 def test_direct_incident_response_matches_without_printing_content():
     result = inspect_response(raw(incident()))
@@ -288,4 +292,99 @@ def test_cli_empty_discovery_returns_distinct_no_sample_exit(monkeypatch, capsys
     assert json.loads(captured.out)["classification"] == "no_sample"
     assert "PRIVATE" not in captured.out
     assert client.calls == [("list",)]
+
+
+def log_entry():
+    return {
+        "ts": "2026-10-31T14:00:00Z", "source": "PRIVATE SOURCE",
+        "host": "PRIVATE HOST", "client_ip": "PRIVATE ADDRESS",
+        "username": "PRIVATE USER", "action": "PRIVATE ACTION",
+        "target": "PRIVATE TARGET", "outcome": "PRIVATE OUTCOME",
+        "status_code": 200, "bytes_sent": 1234, "clock_anomaly": False,
+        "PRIVATE FIELD NAME": "PRIVATE EXTRA VALUE",
+    }
+
+
+@pytest.mark.parametrize("nullable_fields", [False, True])
+def test_log_sample_reports_known_types_without_disclosing_event_or_unknown_keys(nullable_fields):
+    entry = log_entry()
+    if nullable_fields:
+        entry.update(client_ip=None, username=None)
+    result = inspect_response(raw({
+        "query": {"PRIVATE QUERY FIELD": "PRIVATE QUERY VALUE"},
+        "count": 1, "collection_gaps": [], "logs": [entry],
+    }))
+    assert result["classification"] == "unsupported"
+    assert result["directIncidentResponse"] is False
+    assert result["incidentMatches"] == []
+    assert result["guideMatches"] == []
+    event = next(candidate for candidate in result["candidates"] if candidate["path"].endswith(".logs[0]"))
+    assert event["knownFields"] == {
+        "ts": "string", "source": "string", "host": "string",
+        "client_ip": "null" if nullable_fields else "string",
+        "username": "null" if nullable_fields else "string",
+        "action": "string", "target": "string", "outcome": "string",
+        "status_code": "integer", "bytes_sent": "integer", "clock_anomaly": "boolean",
+    }
+    assert event["unknownFieldCount"] == 1
+    assert "PRIVATE" not in json.dumps(result)
+
+
+def test_empty_log_collection_is_no_sample():
+    result = inspect_response(raw({"query": {}, "count": 0, "collection_gaps": [], "logs": []}))
+    assert result["classification"] == "no_sample"
+    assert result["incidentMatches"] == []
+
+
+def test_log_probe_reads_once_without_any_report_request():
+    from team102_probe import probe_logs
+
+    client = FakeClient(None, {"logs": [log_entry()]})
+    result = probe_logs(client)
+    assert client.calls == [("logs",)]
+    assert result["requestCount"] == 1
+    assert result["sampleSource"] == "logs"
+    assert result["classification"] == "unsupported"
+    assert "PRIVATE" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("records, expected_exit", [
+    ([log_entry()], 2), ([], 3), ([incident()], 0),
+])
+def test_cli_logs_mode_reads_once_and_prints_only_schema_results(monkeypatch, capsys, records, expected_exit):
+    import team102_probe
+
+    class ContextClient(FakeClient):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    client = ContextClient(None, {"logs": records})
+    monkeypatch.setenv("SEC450_KEY", "PRIVATE API KEY")
+    monkeypatch.setattr(team102_probe, "dotenv_values", lambda path: {})
+    monkeypatch.setattr(team102_probe, "Team102Client", lambda key: client)
+    assert team102_probe.main(["--resource", "logs"]) == expected_exit
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    summary = json.loads(captured.out)
+    assert summary["sampleSource"] == "logs"
+    assert summary["requestCount"] == 1
+    assert "PRIVATE" not in captured.out
+    assert client.calls == [("logs",)]
+
+
+def test_cli_rejects_report_id_in_logs_mode_before_creating_client(monkeypatch, capsys):
+    import team102_probe
+
+    monkeypatch.setenv("SEC450_KEY", "PRIVATE API KEY")
+    monkeypatch.setattr(team102_probe, "dotenv_values", lambda path: {})
+    monkeypatch.setattr(team102_probe, "Team102Client", lambda *args, **kwargs: pytest.fail("Invalid option combination must not access source"))
+    assert team102_probe.main(["--resource", "logs", "--report-id", "PRIVATE-ID"]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert json.loads(captured.err)["error"] == "configuration"
+    assert "PRIVATE" not in captured.err
+    assert "Traceback" not in captured.err
 

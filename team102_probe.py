@@ -1,4 +1,4 @@
-"""Read one source report and emit schema evidence without payloads or writes."""
+"""Read a source sample and emit schema evidence without payloads or writes."""
 
 import argparse
 from collections import deque
@@ -19,11 +19,12 @@ from team102_contract import SourceApiError, decode_source_json, validate_report
 
 _SCHEMA = IncidentResponse.model_json_schema()
 _VALIDATOR = Draft202012Validator(_SCHEMA, format_checker=FormatChecker())
-_WRAPPERS = ("reports", "incidents", "items", "data", "report", "incident", "body")
+_WRAPPERS = ("reports", "incidents", "items", "data", "report", "incident", "body", "logs")
 _KNOWN_FIELDS = set(_SCHEMA["properties"]) | set(_WRAPPERS) | {
     "report_id", "query", "count", "collection_gaps", "summary", "matched_rule",
     "requester", "data_destination", "timeline", "ai_assessment", "raw_lines",
-    "integrity", "previous_cluster_id",
+    "integrity", "previous_cluster_id", "ts", "host", "client_ip", "username",
+    "action", "target", "outcome", "status_code", "bytes_sent", "clock_anomaly",
 }
 for _definition in _SCHEMA.get("$defs", {}).values():
     _KNOWN_FIELDS.update(_definition.get("properties", {}))
@@ -96,7 +97,7 @@ def inspect_response(raw_content: bytes) -> dict:
         document.keys() & (set(_SCHEMA["required"]) | {"report_id"})
     ):
         empty_collection = any(
-            document.get(name) == [] for name in ("reports", "incidents", "items", "data")
+            document.get(name) == [] for name in ("reports", "incidents", "items", "data", "logs")
         )
     for path, value in _candidates(document):
         errors = list(islice(_VALIDATOR.iter_errors(value), 33))
@@ -177,17 +178,26 @@ def probe_one(client, report_id: str | None = None) -> dict:
     }
 
 
+def probe_logs(client) -> dict:
+    """Inspect the first log record from one bounded list request."""
+    result = client.read_logs_sample()
+    return {**inspect_response(result.raw_content), "requestCount": 1, "sampleSource": "logs"}
+
+
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Read one Team 102 report and print a redacted schema comparison")
+    parser = argparse.ArgumentParser(description="Read a Team 102 sample and print a redacted schema comparison")
+    parser.add_argument("--resource", choices=("reports", "logs"), default="reports")
     parser.add_argument("--report-id", help="Optional source identifier; otherwise discover one using limit=1")
     args = parser.parse_args(argv)
     try:
+        if args.resource == "logs" and args.report_id is not None:
+            raise SourceApiError("configuration", "--report-id is only supported for reports")
         file_values = dotenv_values(Path(__file__).resolve().with_name(".env"))
         api_key = os.environ.get("SEC450_KEY", file_values.get("SEC450_KEY"))
         if not api_key:
             raise SourceApiError("configuration", "SEC450_KEY must be configured locally for API access")
         with Team102Client(api_key) as client:
-            summary = probe_one(client, args.report_id)
+            summary = probe_logs(client) if args.resource == "logs" else probe_one(client, args.report_id)
         print(json.dumps(summary, sort_keys=True))
         if summary["incidentMatches"]:
             return 0
