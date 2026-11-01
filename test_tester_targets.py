@@ -138,3 +138,71 @@ def test_admission_does_not_resolve_dns_or_open_connections(monkeypatch):
     monkeypatch.setattr(socket, "socket", forbidden_network)
     policy = ApprovedTargets(("https://api.example/Base",))
     assert policy.normalize_and_require("https://API.EXAMPLE:443/Base/") == "https://api.example/Base"
+
+
+@pytest.mark.parametrize(
+    "target, requested, expected",
+    [
+        (
+            "http://127.0.0.1:8002/system",
+            "http://127.0.0.1:8002/system/",
+            "http://127.0.0.1:8002/system",
+        ),
+        (
+            "http://[::1]:8002/system",
+            "http://[0:0:0:0:0:0:0:1]:8002/system",
+            "http://[::1]:8002/system",
+        ),
+        (
+            "https://127.0.0.1:443/system",
+            "https://127.0.0.1/system",
+            "https://127.0.0.1/system",
+        ),
+    ],
+)
+def test_explicit_local_factory_can_admit_exact_loopback_literals(
+    target, requested, expected
+):
+    policy = ApprovedTargets((target,), allow_loopback=True)
+    assert policy.targets == (expected,)
+    assert policy.normalize_and_require(requested) == expected
+    with pytest.raises(ValueError):
+        ApprovedTargets((target,))
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "http://localhost:8002/system",
+        "http://127.0.0.2:8002/system",
+        "http://127.1:8002/system",
+        "http://2130706433:8002/system",
+        "http://0177.0.0.1:8002/system",
+        "http://10.0.0.1:8002/system",
+        "http://192.168.1.1:8002/system",
+        "http://[::ffff:127.0.0.1]:8002/system",
+        "http://[fc00::1]:8002/system",
+        "http://0.0.0.0:8002/system",
+        "http://169.254.169.254/system",
+    ],
+)
+def test_loopback_opt_in_does_not_admit_local_names_or_other_nonpublic_targets(target):
+    with pytest.raises(ValueError):
+        ApprovedTargets((target,), allow_loopback=True)
+
+
+@pytest.mark.parametrize("value", [None, 0, 1, "true", [], {}])
+def test_loopback_opt_in_requires_a_real_configuration_boolean(value):
+    with pytest.raises(ValueError):
+        ApprovedTargets((), allow_loopback=value)
+
+
+def test_explicit_loopback_admission_still_requires_exact_port_path_and_scheme():
+    policy = ApprovedTargets(("http://127.0.0.1:8002/system",), allow_loopback=True)
+    for requested in (
+        "http://127.0.0.1:8003/system",
+        "http://127.0.0.1:8002/",
+        "https://127.0.0.1:8002/system",
+    ):
+        with pytest.raises(ProtocolFailure):
+            policy.normalize_and_require(requested)

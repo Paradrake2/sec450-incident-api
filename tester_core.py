@@ -55,7 +55,10 @@ class TesterCoordinator:
         cases: tuple[SuiteCase, ...] | None = None,
         setup_timeout: float = 10,
         run_timeout: float = 30,
+        max_sessions: int = 128,
     ):
+        if type(max_sessions) is not int or max_sessions < 1:
+            raise ValueError("max_sessions must be a positive integer")
         for name, value in (
             ("setup_timeout", setup_timeout),
             ("run_timeout", run_timeout),
@@ -88,6 +91,8 @@ class TesterCoordinator:
         self._setup_timeout = setup_timeout
         self._run_timeout = run_timeout
         self._sessions: dict[str, _Session] = {}
+        self._preparing: set[str] = set()
+        self._max_sessions = max_sessions
         self._lock = Lock()
 
     @property
@@ -103,29 +108,37 @@ class TesterCoordinator:
     async def setup(self, target_url: str) -> SessionResponse:
         self._require_configuration()
         session_id = str(uuid4())
-        try:
-            echoed_id = await asyncio.wait_for(
-                self._gateway.prepare(target_url, session_id),
-                timeout=self._setup_timeout,
-            )
-        except ProtocolFailure:
-            raise
-        except TimeoutError:
-            raise ProtocolFailure(
-                500, "The target setup request timed out.", "communication"
-            ) from None
-        except Exception:
-            raise ProtocolFailure(
-                500, "The tester could not prepare the target.", "tester"
-            ) from None
-        if echoed_id != session_id:
-            raise ProtocolFailure(
-                500, "The target did not echo the requested session ID.", "system"
-            )
-        session = _Session(TestContext(target_url, session_id))
         with self._lock:
-            self._sessions[session_id] = session
-        return SessionResponse(session_id=session_id)
+            if len(self._sessions) + len(self._preparing) >= self._max_sessions:
+                raise ProtocolFailure(503, "Tester session capacity reached; saved reports are retained", "tester")
+            self._preparing.add(session_id)
+        try:
+            try:
+                echoed_id = await asyncio.wait_for(
+                    self._gateway.prepare(target_url, session_id),
+                    timeout=self._setup_timeout,
+                )
+            except ProtocolFailure:
+                raise
+            except TimeoutError:
+                raise ProtocolFailure(
+                    500, "The target setup request timed out.", "communication"
+                ) from None
+            except Exception:
+                raise ProtocolFailure(
+                    500, "The tester could not prepare the target.", "tester"
+                ) from None
+            if echoed_id != session_id:
+                raise ProtocolFailure(
+                    500, "The target did not echo the requested session ID.", "system"
+                )
+            session = _Session(TestContext(target_url, session_id))
+            with self._lock:
+                self._sessions[session_id] = session
+            return SessionResponse(session_id=session_id)
+        finally:
+            with self._lock:
+                self._preparing.discard(session_id)
 
     async def run(self, session_id: str) -> SuiteReport:
         with self._lock:

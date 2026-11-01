@@ -1,8 +1,8 @@
 """Exact logical admission of configured tester base URLs, without network I/O.
 
 This policy does not resolve DNS or establish that an approved DNS name points
-to a public address. A future live gateway must enforce DNS/address policy and
-redirect restrictions at connection time. No live HTTP transport is supplied.
+to a public address. The live gateway enforces those checks at connection time.
+Only trusted local factories may opt into exact loopback-literal test targets.
 """
 
 from dataclasses import dataclass
@@ -20,12 +20,13 @@ _NUMERIC_LABEL = re.compile(r"(?:[0-9]+|0x[0-9a-f]+)\Z")
 _LOCAL_NAMES = ("localhost", "local", "internal")
 
 
-def _canonical_base_url(raw_url: str) -> str:
+def _canonical_base_url(raw_url: str, *, allow_loopback: bool = False) -> str:
     """Validate a deliberately narrow HTTP base URL syntax before matching."""
+    if type(allow_loopback) is not bool:
+        raise ValueError("Loopback target opt-in must be a boolean")
     if not isinstance(raw_url, str) or not raw_url:
         raise ValueError("Target base URL must be a nonempty string")
-    if any(char.isspace() or category(char) in {"Cc", "Cf", "Cs"}
-           for char in raw_url):
+    if any(char.isspace() or category(char) in {"Cc", "Cf", "Cs"} for char in raw_url):
         raise ValueError("Target base URL cannot contain whitespace or controls")
     # Reject encodings altogether: no decoder or downstream URL parser may
     # reinterpret an approved authority, path separator, dot segment or delimiter.
@@ -58,8 +59,11 @@ def _canonical_base_url(raw_url: str) -> str:
     except ValueError:
         if bracketed:
             raise ValueError("Only IPv6 addresses may use host brackets") from None
-        if (len(host) > 253 or not host
-                or any(_DNS_LABEL.fullmatch(label) is None for label in host.split("."))):
+        if (
+            len(host) > 253
+            or not host
+            or any(_DNS_LABEL.fullmatch(label) is None for label in host.split("."))
+        ):
             raise ValueError("Invalid target hostname") from None
         # Legacy integer, short, hexadecimal and octal IPv4 spellings must not
         # slip through as DNS names for another parser to reinterpret later.
@@ -70,9 +74,16 @@ def _canonical_base_url(raw_url: str) -> str:
     else:
         if bracketed != isinstance(address, IPv6Address):
             raise ValueError("IPv6 target addresses must use brackets")
-        if (not address.is_global or address.is_private or address.is_loopback
-                or address.is_link_local or address.is_multicast
-                or address.is_reserved or address.is_unspecified):
+        permitted_loopback = allow_loopback and str(address) in {"127.0.0.1", "::1"}
+        if not permitted_loopback and (
+            not address.is_global
+            or address.is_private
+            or address.is_loopback
+            or address.is_link_local
+            or address.is_multicast
+            or address.is_reserved
+            or address.is_unspecified
+        ):
             raise ValueError("Nonpublic target addresses are not allowed")
         host = f"[{address}]" if bracketed else str(address)
 
@@ -85,11 +96,15 @@ def _canonical_base_url(raw_url: str) -> str:
             raise ValueError("Invalid target port")
     else:
         port = 80 if parsed.scheme == "http" else 443
-    port_suffix = "" if port == {"http": 80, "https": 443}[parsed.scheme] else f":{port}"
+    port_suffix = (
+        "" if port == {"http": 80, "https": 443}[parsed.scheme] else f":{port}"
+    )
 
     path = parsed.path
     if "//" in path or any(segment in {".", ".."} for segment in path.split("/")):
-        raise ValueError("Target base path cannot contain repeated slashes or dot segments")
+        raise ValueError(
+            "Target base path cannot contain repeated slashes or dot segments"
+        )
     if path.endswith("/"):
         path = path[:-1]
     return f"{parsed.scheme}://{host}{port_suffix}{path}"
@@ -102,18 +117,32 @@ class ApprovedTargets:
     Host names, IDNA spellings, default ports and one final base slash normalize
     before exact comparison. Scheme, nondefault port and base path must match;
     base path case is significant. Configuration errors fail at construction.
+    Trusted local factories may opt into 127.0.0.1/::1 literals; local DNS names
+    and every other nonpublic address remain forbidden.
     """
 
     targets: tuple[str, ...] = ()
+    allow_loopback: bool = False
 
     def __post_init__(self) -> None:
+        if type(self.allow_loopback) is not bool:
+            raise ValueError("Loopback target opt-in must be a boolean")
         if not isinstance(self.targets, tuple):
             raise ValueError("Approved targets must be a tuple of base URLs")
-        object.__setattr__(self, "targets", tuple(_canonical_base_url(url) for url in self.targets))
+        object.__setattr__(
+            self,
+            "targets",
+            tuple(
+                _canonical_base_url(url, allow_loopback=self.allow_loopback)
+                for url in self.targets
+            ),
+        )
 
     def normalize_and_require(self, raw_url: str) -> str:
         try:
-            normalized = _canonical_base_url(raw_url)
+            normalized = _canonical_base_url(
+                raw_url, allow_loopback=self.allow_loopback
+            )
         except ValueError:
             raise ProtocolFailure(400, "Invalid target base URL", "tester") from None
         if normalized not in self.targets:
