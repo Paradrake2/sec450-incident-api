@@ -353,3 +353,31 @@ prior API-import/walkthrough checkpoint. No application behavior, deployed
 target, normal database, external message, or filing was changed. PDFs and
 local generated reports remain excluded. See the
 [reconciliation record](phase2-contract-reconciliation.md).
+
+## Team 102 repository and live control discovery - October 31, 2026
+
+At the user's request, searched public GitHub and identified `dredinbo15/SEC450`;
+its testing document explicitly identifies Team 102/Pod C and the known source
+hostname. Reviewed source at `1ef6b270b686ecc845c4946a84514475e01205af` without
+executing it. System and tester bases are now known: `https://seclog.redinbo.win`
+and that origin plus `/tester`. The deployed commit remains unverified.
+
+Direct unauthenticated HTTPS checks confirmed index/health 200, non-destructive
+system setup 201 and a valid system report 200. The peer's own tester, invoked
+against its own system, returned 28 results: 27 pass and one source-IP-filter
+skip due to absent suitable recent data. Run and saved report matched, remained
+stable, and passed our report models. Coverage reported 8/8 peer operations and
+7/30 peer criteria executed, with code null/null. This is not our tester or a
+bidirectional incident-contract acceptance run. No saved API key, remote reset,
+external message, or third-party code execution was used.
+
+Their source exposes a log/query project API and course controls, not our nine
+incident operations; the known host also returned 404 for `/api/v1/health`.
+Their versioned fixtures provide detector-rule labels, not the missing shared
+materiality labels. Their optional push adapter already maps reports to our
+incident POST, disabled by default in example configuration; deployed enablement
+is unknown. Coordinate push/pull ownership and receiver deduplication before
+adding automatic incident creation. The current snapshot importer does not
+create incidents. These discoveries narrow the remaining pod questions to
+project scope, fixtures/labels, and session/coverage rules, rather than unknown
+course-control URLs. See the [source and observation record](team102-repository-review.md).
