@@ -129,9 +129,11 @@ run before claiming GitHub Actions success.
 
 ## Operational limits
 
-Current startup still creates missing tables and backfills legacy snapshots.
-Managed migrations, backups/recovery verification, protected product access,
-and the shared ingestion contract remain separate milestones. A database
+Current startup still creates missing legacy tables and backfills legacy snapshots.
+The [manual API import](team102-api-import.md) adds explicit Alembic baseline
+adoption and migrations for its private source tables. Moving the entire legacy
+startup lifecycle to migrations, backups/recovery verification, protected product access,
+and the full source-data contract remain separate milestones. A database
 switch does not authenticate a reviewer or turn advisory screening into a human
 materiality decision.
 

@@ -2,7 +2,7 @@
 
 **Team 105 (Indy, Pod C) — Cybersecurity Incident Evidence & SEC Disclosure Support**
 
-A REST API for receiving, storing, assessing, and reviewing cybersecurity incidents. The backend preserves submitted evidence and supports human review and preliminary disclosure drafting. Integration with Pod C's Team 102 log detection service is being designed around a proposed shared PostgreSQL company-data source; the existing API also accepts incident JSON directly.
+A REST API for receiving, storing, assessing, and reviewing cybersecurity incidents. The backend preserves submitted evidence and supports human review and preliminary disclosure drafting. The selected Team 102 integration uses its read-only Query API and preserves source reports in our application-owned PostgreSQL database. Shared PostgreSQL is deferred. The existing API also accepts incident JSON directly.
 
 > **Coursework prototype — synthetic data only.** This is not a production incident-response or legal compliance system. Automated screening does **not** establish legal materiality, and disclosure output is not an SEC filing.
 
@@ -20,7 +20,7 @@ A REST API for receiving, storing, assessing, and reviewing cybersecurity incide
 
 ## Current implementation
 
-The backend supports incident submission, persistent storage, retrieval, state tracking, and deterministic assessment. Human reviews have append-only history, related-incident links are stored symmetrically, and each generated non-final disclosure draft is preserved. A product frontend, evidence revisions, authenticated reviewer access, deadline tracking, and the course cross-team testing protocol remain planned work. See [implementation status and decisions](docs/implementation-status.md).
+The backend supports incident submission, persistent storage, retrieval, state tracking, and deterministic assessment. Human reviews have append-only history, related-incident links are stored symmetrically, and each generated non-final disclosure draft is preserved. A mounted tester protocol foundation supports injected-adapter setup/run/report checks; its default configuration makes no outbound requests. System sessions, the real project suite, a product frontend, evidence revisions, authenticated reviewer access, and deadline tracking remain planned work. See [implementation status and decisions](docs/implementation-status.md).
 
 The system supports organizational processes relevant to **Regulation S-K Item 106** (cybersecurity risk management and governance disclosures) and **Form 8-K Item 1.05** (material cybersecurity incident reporting). The company, through authorized personnel, retains responsibility for materiality decisions and any SEC filing.
 
@@ -110,17 +110,28 @@ notes described as **Team 102 → Team 105**:
 4. Our API returns an incident ID and stores the record with state `RECEIVED`.
 5. Either team can use that ID to verify retrieval and subsequent assessment.
 
-The user clarified on October 31 that the desired direction is a common
-PostgreSQL company-data store that Team 105 reads, and confirmed that this is
-still a design proposal. Shared schema, source identity, ingestion ownership,
-and permissions remain to be agreed with Team 102. See
-[company-data and reviewer-access design](docs/company-data-design.md).
+The selected approach is now Team 102's **read-only Query API** at
+https://seclog.redinbo.win, with our own PostgreSQL storage for preserved source
+reports and application records. Shared database access is deferred and was
+not established as an inter-team agreement.
 
-Team 102 also documents a **separate read-only Query API** at
-https://seclog.redinbo.win, using authenticated endpoints such as `/v1/reports`.
-Our deployed application does not automatically poll or ingest that API, and
-no shared-database importer exists yet. The API intake capability, the proposed
-company-data source, and course cross-team testing are separate interfaces.
+An operator-only importer can fetch one explicitly selected report and retain
+an immutable content snapshot plus retrieval provenance. It uses migrations
+and has no public import endpoint, automatic polling, or automatic incident
+creation. The complete source body contract and incident mapping still need
+confirmation; importer tests use synthetic responses.
+The read-only `python -m team102_probe` command can discover one report and
+compare its detail response with our incident schema without importing data.
+It prints redacted schema diagnostics and makes at most two GET requests;
+`--report-id` bypasses discovery. One authenticated live sample matched the
+guide's numeric `report_id`/object `body` envelope, not our `IncidentResponse`.
+This establishes that sample's shape, not full source-contract conformance.
+The API key belongs only in ignored local secrets.
+Use `python -m team102_probe --resource logs` to inspect the separate log feed
+with one bounded HTTPS GET; it does not import logs or infer incident records.
+See [API import setup and limits](docs/team102-api-import.md) and
+[company-data and reviewer-access design](docs/company-data-design.md).
+The report-feed integration and course cross-team testing remain separate.
 
 ## Run locally
 
@@ -171,7 +182,26 @@ py -m pip install -r requirements-dev.txt
 py -m pytest -q
 ```
 
-Without `TEST_DATABASE_URL`, API tests use temporary SQLite stores. Set an explicit loopback PostgreSQL test URL to run the same suite against disposable schemas in a dedicated test database; see [PostgreSQL test commands](docs/postgresql.md#run-postgresql-regressions). Tests do not inherit the application's `DATABASE_URL` and must not target the shared Render database. The instructor's separate system/tester `/test/*` interface is not implemented yet; `/api/v1/test/reset` is not an isolated session-setup endpoint. Current baseline and implementation validation are recorded in [the status log](docs/implementation-status.md).
+Without `TEST_DATABASE_URL`, API tests use temporary SQLite stores. Set an explicit loopback PostgreSQL test URL to run the same suite against disposable schemas in a dedicated test database; see [PostgreSQL test commands](docs/postgresql.md#run-postgresql-regressions). Tests do not inherit the application's `DATABASE_URL` and must not target the shared Render database. The [tester protocol foundation](docs/cross-team-testing.md) is mounted at `/tester`, with its schema at `/tester/openapi.json`. Default setup fails closed until a trusted target adapter and agreed project suite are configured. Root system setup/report and cross-team validation are still pending; `/api/v1/test/reset` is not an isolated session-setup endpoint. Current baseline and implementation validation are recorded in [the status log](docs/implementation-status.md).
+
+To walk through setup, run, and saved-report retrieval locally, use the separate
+synthetic demo:
+
+```powershell
+.\.venv\Scripts\python.exe -m tester_demo
+.\.venv\Scripts\python.exe -m tester_demo --scenario fail
+.\.venv\Scripts\python.exe -m tester_demo --scenario abort
+.\.venv\Scripts\python.exe -m tester_demo --serve
+```
+
+Server mode exposes [interactive tester docs](http://127.0.0.1:8001/tester/docs).
+The demo uses three synthetic cases with no external requests, database access,
+API keys, or invented coverage measurements. It demonstrates the tester
+lifecycle, including ordinary failures and saved aborts; it does not run the
+incident API or establish cross-team conformance. See the [local walkthrough](docs/cross-team-testing.md#walk-through-the-tester-locally)
+for request bodies and expected responses. The normal `main:app` tester remains
+unconfigured while system controls, session fixtures/routing, real gateway/cases,
+coverage, and deployment are still pending.
 
 **Recorded Phase 3 deployed-service check:** October 18, 2026, approximately 23:57 UTC — **23 run, 23 passed, 0 failed**. Checks included service availability, creation/retrieval, state filtering, positive/negative assessments, human review, relations, draft generation, and failure responses (`400`, `404`, `409`, `415`). The run was made against `https://sec450-incident-api.onrender.com`. This is a **custom deployed API test suite**, not a claim that the complete instructor-provided OpenAPI acceptance suite or security/performance tests have passed. The matching `sec450-test-results.json` can be retained as submission evidence.
 

@@ -2,20 +2,32 @@
 
 Working design, October 31, 2026. This document proposes the next product data boundary. The tables, access controls, importer, and AI output below are not implemented by documenting them. Preserve the existing `/api/v1` contract while introducing reviewed product extensions.
 
+Current decision: use Team 102's read-only Query API and application-owned
+PostgreSQL storage. Shared PostgreSQL is deferred pending a future joint
+agreement. A bounded manual source-report preservation/import slice is now
+implemented; full evidence/incident mapping, product permissions, and AI output
+remain future work. See [API import implementation](team102-api-import.md).
+
 ## Evidence and unresolved integration agreement
 
 | Input | What it establishes | What it does not establish |
 | --- | --- | --- |
 | Current application source | Incident logs, deterministic assessments, submitted reviewer strings, review history, symmetric links, and saved non-final drafts exist. | Authenticated reviewers, evidence revisions, editable draft history, AI extraction, and isolated course sessions do not yet exist. |
-| User's October 31 clarifications | Design a common PostgreSQL company-data store that Team 105 reads. The user confirmed this is still a proposal, with no existing shared store to integrate. Reviewer access will use application accounts with administrator-approved roles. | Team 102's final source schema, retention policy, and importer behavior still need agreement. Earlier repository notes describe Team 102 pushing incident JSON to our API. |
+| User's October 31 clarifications | Use the read-only Query API for now and defer the shared PostgreSQL proposal. Keep imported source evidence in our own database. Reviewer access will use application accounts with administrator-approved roles. | Team 102's complete response schema, source correction/version semantics, and cross-team testing contract still need confirmation. |
 | Supplied `SEC450 Query API.md` | Team 102 documents authenticated read-only reports, clusters, events, and integrity checks at `https://seclog.redinbo.win`. Reports include source summaries, timelines, raw log lines, detection rules, upstream AI assessments, and integrity information. | It documents neither PostgreSQL access nor our incident API. A live response/schema and successful authenticated integration have not been verified by this design review. |
 | Architecture drawing | Security tools, tickets, business inputs, and reviewers contribute to one traceable incident workflow. | It does not require every contributor to write the same application tables. |
 
-The query API can be an alternative source adapter if the database agreement changes. Choose one authoritative delivery route for each source event; if both routes are supported, they must share the same upstream event identity and deduplication rules. Do not turn the Query API's optional polling example into a configured integration without that agreement.
+The Query API is the selected source adapter. Choose one authoritative delivery
+route for each source event; future alternative routes must share the same
+source identity and deduplication rules. The guide's polling example is not a
+configured background integration: incremental retrieval and source correction
+semantics remain unconfirmed.
 
-## Recommended PostgreSQL ownership boundary
+## Deferred shared PostgreSQL design
 
-One PostgreSQL instance can host separate schemas and roles. Use a source-owned ingestion schema for company inputs and application-owned tables for Team 105's workflow. A database instance is shared infrastructure; permissions and ownership still need explicit boundaries.
+If the teams later agree on shared infrastructure, one PostgreSQL instance can
+host separate schemas and roles. The source-owned ingestion/app-owned workflow
+boundary below is a retained proposal, not the current implementation direction.
 
 ```text
 Security / ticket / business sources
@@ -130,8 +142,8 @@ Authorize every mutation server-side and record the authenticated actor. Use ver
 
 ## Decisions needed for the next slices
 
-1. Design the proposed shared PostgreSQL delivery with Team 102. Obtain a synthetic payload example, versioned source schema, stable event/revision identity, and an owner for the feed. The Query API remains an available documented alternative, not a configured importer.
-2. Before provisioning the shared store, agree host/database/schemas, roles, network/TLS requirements, retention/backups, and migration ownership. Configure secrets through local/deployment secret storage, never chat or Git.
+1. Confirm the selected Query API's report-detail response with a synthetic example, stable source identity, and new/corrected report semantics. The manual preservation slice does not establish a complete automatic importer or incident mapping.
+2. Keep shared PostgreSQL deferred. Any later change requires joint schema, role, retention, migration, and operational ownership agreement. Configure API credentials through local/deployment secrets, never chat or Git.
 3. Implement the selected application-account approach with administrator-approved roles. Agree initial administrator provisioning, account recovery, reviewer approval/revocation, and any second-reviewer requirement before protected decisions or draft editing are exposed.
 4. Agree course session routing, fixture/reset/cleanup policy, component/acceptance-criterion inventories, and timing/access notes. Generated Team 105 OpenAPI describes implemented wire shapes; it does not supply those missing pod agreements.
 5. Deliver PostgreSQL validation/migrations first, then an evidence import with receipts/audit, protected human review, and the course interface in small separately reviewed checkpoints. Provider-backed AI follows the evidence/revision and output-schema foundation.
