@@ -4,7 +4,7 @@
 
 **Repository:** `Paradrake2/sec450-incident-api`  
 **Audited common contract:** Team 105's Phase 2 Section 5.1, OpenAPI 3.1.0, version 1.0.0, supplemented by AC-01–AC-08 and the Phase 4 Q3 rubric.  
-**Important verification limit:** The latest pod-shared project specification has not been supplied for this update. Compare its versioned contract and check pod agreement before claiming definitive conformance. The instructor's Cross-team Testing Interface was independently reviewed, including the user-linked document, but is a separate protocol; it does not establish project-specific fixtures or oracles. See [source details and decisions](implementation-status.md).
+**Updated verification boundary:** The supplied Phase2_Gradescope.pdf now provides the original Section 5.1 contract, OpenAPI 3.1.0 / version 1.0.0. Its normalized baseline is preserved under `contracts/`. Current pod agreement, shared fixture contents, and deployed conformance still need verification. The instructor's Cross-team Testing Interface is a separate control protocol. Run `python -m contract_audit --format markdown` for observed local results and see [the reconciliation record](phase2-contract-reconciliation.md) for newly confirmed differences. Earlier entries below describe the historical audit; the new report does not silently mark those differences fixed.
 
 ## Disclosure recovery resolved in repository source
 
@@ -40,11 +40,11 @@ The original audit identifies nine common operations, below relative to `/api/v1
 
 - **RESET-FIXTURES (REQ-08):** Phase 2 promises resetting to a shared fixture state. The supplied plan does not establish a verified fixture seed and `POST /test/reset` currently only deletes records. Decide exact fixture dataset and ownership with Team 102 before changing reset semantics; otherwise report it as a deviation.
 - **LIFECYCLE-CLOSED (REQ-04):** `CLOSED` is an enum value but there is no agreed close operation. Do not unilaterally add a new common endpoint; either specify closure in the pod contract or update the model with an explicit limitation.
-- **REQUEST-EXTRA-FIELDS (REQ-08):** Link request uses `extra="forbid"`, while Phase 2 doesn't set `additionalProperties:false` for that request. Agree whether extra fields should be accepted/ignored or prohibited before changing behavior.
+- **REQUEST-EXTRA-FIELDS (REQ-08), corrected:** Related requests now accept and ignore additional properties as the recovered schema permits; create/review requests remain closed.
 - **AUTHORIZATION (REQ-05):** The shared interface has no authentication, so a user-supplied reviewer identifier is not verification of an authorized human. Continue restricting deployment to synthetic test data and disclose this limitation.
-- **VALIDATION-PRECEDENCE (REQ-08):** Agree whether a request with both an unknown incident ID and an invalid body should return `404` or `400`. Preserve current behavior until that precedence is confirmed.
+- **VALIDATION-PRECEDENCE (REQ-08), corrected for fields:** Incident lookup now precedes decoded body field validation on review/related, after media checks. Malformed JSON is an explicit envelope-syntax `400` before dependencies. Selected-session overrides are retained.
 - **TRIAGE-FIXTURES (REQ-03):** Agree AC-03 labels and fixtures before treating the local deterministic cases as a remote tester's definitive oracle.
-- **SHARED-SPEC:** Obtain the latest pod-shared project API/OpenAPI contract, not only the Phase 2 copy or instructor testing protocol. Record its version/date and the agreed fixtures, session routing, coverage inventories, cleanup rules, and request limits before making interoperability claims.
+- **SHARED-SPEC:** The historical Phase 2 contract is now available. Confirm its current pod status/version and obtain the still-missing fixtures, session routing, coverage inventories, cleanup rules, and request limits before making interoperability claims.
 
 ## Historical Stage 3 validation
 

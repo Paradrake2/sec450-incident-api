@@ -1,0 +1,674 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SEC Cybersecurity Incident Testing API",
+    "version": "1.0.0",
+    "description": "Common API used for independent cross-team testing of cybersecurity incident ingestion, assessment, review, related-incident handling, and disclosure-draft generation."
+  },
+  "servers": [
+    {
+      "url": "https://{team-base-url}/api/v1",
+      "variables": {
+        "team-base-url": {
+          "default": "example-team.test"
+        }
+      }
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Check whether the service is available",
+        "description": "Used by automated tests to verify that a team's deployed service is reachable before functional tests begin.",
+        "x-requirements": [],
+        "responses": {
+          "200": {
+            "description": "Service is available",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "const": "ok"
+                    }
+                  }
+                },
+                "example": {
+                  "status": "ok"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service is running but temporarily unavailable"
+          }
+        }
+      }
+    },
+    "/test/reset": {
+      "post": {
+        "summary": "Reset the service to a known test state",
+        "description": "Deletes test-created incident data and restores the shared test fixture state so automated tests can be repeated consistently. This operation is intended only for the cross-team test deployment.",
+        "x-requirements": [
+          "REQ-08"
+        ],
+        "responses": {
+          "204": {
+            "description": "Test state successfully reset"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/incidents": {
+      "post": {
+        "summary": "Submit a security incident",
+        "description": "Creates an incident from a plain-text security log. The incident initially enters the RECEIVED state.",
+        "x-requirements": [
+          "REQ-01",
+          "REQ-04",
+          "REQ-08"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateIncidentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Incident successfully created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Incident"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "415": {
+            "description": "Unsupported request media type"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "get": {
+        "summary": "List incidents",
+        "description": "Returns stored incidents so another team can test the monitoring and retrieval behavior without knowing the internal database design.",
+        "x-requirements": [
+          "REQ-02"
+        ],
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/IncidentState"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of matching incidents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Incident"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/incidents/{incidentId}": {
+      "get": {
+        "summary": "Retrieve one incident",
+        "description": "Returns the incident's stored log, current state, assessment, human review information, and related incidents.",
+        "x-requirements": [
+          "REQ-02",
+          "REQ-04"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IncidentId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Incident found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Incident"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/incidents/{incidentId}/assessment": {
+      "post": {
+        "summary": "Assess an incident",
+        "description": "Runs the implementation's triage process against the submitted log. The system may flag an incident as potentially material, but this operation does not make the final legal materiality determination.",
+        "x-requirements": [
+          "REQ-03",
+          "REQ-04",
+          "REQ-08"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IncidentId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Assessment completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Assessment"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "Incident cannot be assessed in its current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/incidents/{incidentId}/review": {
+      "post": {
+        "summary": "Record a human materiality review",
+        "description": "Records the human review decision. Human review takes precedence over the automated assessment.",
+        "x-requirements": [
+          "REQ-04",
+          "REQ-05",
+          "REQ-08"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IncidentId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Review recorded and incident state updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Incident"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "Review is not permitted in the current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/incidents/{incidentId}/related": {
+      "post": {
+        "summary": "Associate related incidents",
+        "description": "Records that two incidents are related so their combined information can be considered during review.",
+        "x-requirements": [
+          "REQ-06",
+          "REQ-08"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IncidentId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "relatedIncidentId"
+                ],
+                "properties": {
+                  "relatedIncidentId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Relationship successfully recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Incident"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "Relationship already exists or the incident was related to itself",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/incidents/{incidentId}/disclosure": {
+      "post": {
+        "summary": "Generate a disclosure draft",
+        "description": "Generates a non-final disclosure draft from the incident information. The service does not submit anything to the SEC and the generated text must still be reviewed by legal personnel.",
+        "x-requirements": [
+          "REQ-05",
+          "REQ-07",
+          "REQ-08"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IncidentId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Disclosure draft generated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisclosureDraft"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "Disclosure cannot be generated because the incident has not been confirmed as material",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "IncidentId": {
+        "name": "incidentId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "schemas": {
+      "CreateIncidentRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "log",
+          "occurredAt"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "log": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Plain-text cybersecurity incident log"
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "source": {
+            "type": "string",
+            "maxLength": 100
+          }
+        }
+      },
+      "IncidentState": {
+        "type": "string",
+        "enum": [
+          "RECEIVED",
+          "UNDER_REVIEW",
+          "POTENTIALLY_MATERIAL",
+          "NOT_MATERIAL",
+          "MATERIAL_CONFIRMED",
+          "CLOSED"
+        ]
+      },
+      "Incident": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "log",
+          "occurredAt",
+          "state",
+          "createdAt",
+          "relatedIncidentIds"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "log": {
+            "type": "string"
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/IncidentState"
+          },
+          "assessment": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Assessment"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "review": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Review"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "relatedIncidentIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Assessment": {
+        "type": "object",
+        "required": [
+          "potentiallyMaterial",
+          "explanation"
+        ],
+        "properties": {
+          "potentiallyMaterial": {
+            "type": "boolean"
+          },
+          "explanation": {
+            "type": "string",
+            "minLength": 1
+          },
+          "indicators": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ReviewRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "decision",
+          "reviewer"
+        ],
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "MATERIAL",
+              "NOT_MATERIAL"
+            ]
+          },
+          "reviewer": {
+            "type": "string",
+            "minLength": 1
+          },
+          "rationale": {
+            "type": "string"
+          }
+        }
+      },
+      "Review": {
+        "type": "object",
+        "required": [
+          "decision",
+          "reviewer",
+          "reviewedAt"
+        ],
+        "properties": {
+          "decision": {
+            "type": "string"
+          },
+          "reviewer": {
+            "type": "string"
+          },
+          "rationale": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reviewedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "DisclosureDraft": {
+        "type": "object",
+        "required": [
+          "incidentId",
+          "draft",
+          "generatedAt",
+          "final"
+        ],
+        "properties": {
+          "incidentId": {
+            "type": "string"
+          },
+          "draft": {
+            "type": "string"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "final": {
+            "type": "boolean",
+            "const": false
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": [
+          "error",
+          "message"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "field": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Request is missing required data or contains invalid data",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "INVALID_REQUEST",
+              "message": "log must not be empty",
+              "field": "log"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Requested incident does not exist",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "INCIDENT_NOT_FOUND",
+              "message": "No incident exists with the supplied identifier"
+            }
+          }
+        }
+      },
+      "InternalError": {
+        "description": "Unexpected server-side failure",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    }
+  }
+}

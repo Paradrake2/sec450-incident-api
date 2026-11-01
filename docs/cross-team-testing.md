@@ -1,5 +1,11 @@
 # Cross-team testing protocol foundation
 
+**Historical foundation notes:** the configured real system/tester is now
+implemented in `delivery_app.py`. Use [the current Phase 4 runbook](phase4-delivery.md)
+for real incident checks on port 8002, deployment configuration and cross-run
+commands. The unconfigured `main:app` and synthetic port-8001 demo described
+below remain available; they do not describe the configured delivery entry point.
+
 This milestone implements the generic tester control plane. It is partial
 T-02 work, with shared protocol models useful to T-01. It does not establish
 pod project conformance, a deployed tester, or completed cross-team testing.
@@ -163,6 +169,28 @@ not exercise the incident API or Team 102. The demo reads no API keys or `.env`,
 uses no database, and reports unavailable coverage as null/null with an
 explanation. The server uses one process; restarting loses its demo sessions.
 Stop it with Ctrl+C. The ordinary `main:app` tester stays unconfigured.
+
+### Real local incident-operation audit
+
+The recovered Phase 2 Section 5.1 contract is preserved in
+`contracts/phase2-v1.0.0.openapi.json`. The separate command below exercises real
+incident routes and emits one row for every common operation, including
+requirement mappings, failed checks, and errors not exercised:
+
+```powershell
+.\.venv\Scripts\python.exe -m contract_audit --format markdown
+```
+
+Unlike the three-case synthetic walkthrough, this checks the incident API.
+It creates a disposable local store using the existing harness, never loads
+application `.env` credentials, and accepts no remote URL. An explicit guarded
+`TEST_DATABASE_URL` selects disposable local PostgreSQL schemas; otherwise it
+uses temporary SQLite. Exit 1 means observed contract differences; exit 2 means
+configuration failure. Neither shared-fixture restoration nor untested 500/503
+paths are reported as passing. Historical assessment examples are diagnostic,
+not an invented approved label set. It does not configure the mounted tester,
+implement system sessions, measure coverage, or establish deployed conformance.
+See [the reconciliation record](phase2-contract-reconciliation.md).
 
 ### Regression tests
 

@@ -1,6 +1,65 @@
 # Implementation status and decisions
 
-Updated October 31, 2026. This log records repository work separately from the proposed roadmap in `SEC_Project_Codex_Implementation_Plan.md`.
+Updated November 1, 2026. This log records repository work separately from the proposed roadmap in `SEC_Project_Codex_Implementation_Plan.md`.
+
+## Current Phase 4 release candidate — November 1
+
+`phase4/contract-conformance` now contains a configured delivery entry point,
+an isolated course system, real HTTP incident tests, an acceptance evidence
+client, candidate fixtures and current models. This is implemented and locally
+verified; deployment/cross-team completion is still pending. Earlier sections
+below are checkpoint history, including statements about then-missing features.
+
+- `delivery_app:create_app --factory` preserves the root product API and mounts
+  isolated system `/system` and configured tester `/tester`. The public factory
+  requires explicit course PostgreSQL settings; the loopback factory can use
+  disposable SQLite. Startup opens the normal facade and course registry
+  lifespans explicitly; the isolated facade never runs normal-store startup.
+- Each system session owns a temporary store/generated PostgreSQL schema with
+  no public fallback. Setup seeds the versioned Team 105 candidate profile;
+  isolated reset restores it transactionally. Trusted request state selects
+  the engine and seed. Normal product records remain unchanged by course runs.
+- The optional session header selects retained stores; headerless suites use
+  the latest prepared session and must run serially. One active request per
+  session prevents overlapping mutations. Response completion now occurs only
+  after dependency cleanup and lease release, including bodyless responses and
+  Content-Length streams. This fixed intermittent busy409 responses found by
+  real TCP/PostgreSQL testing but missed by earlier in-process checks.
+- `HttpTargetGateway` enforces exact target bases, public DNS/address checks at
+  connection time, original TLS hostname, no redirects/proxy inheritance,
+  deadlines and response bounds. Credentials from the source importer are not
+  forwarded. Local mode explicitly permits only approved loopback literals.
+- The ordered incident suite has46 results:41 executable checks and5 explicit
+  gaps. All9 operations are represented. Project writes require the exact own
+  isolated base and a successful reset; the Team102 read-only feed is not reset.
+  Classification/reset agreement, CLOSED, server-failure injection and legal
+  draft quality remain qualified gaps, not passing checks.
+- System and tester registries each retain32 sessions; full capacity rejects
+  new setup without evicting reports. Run one worker/instance. Reports and IDs
+  disappear after restart; crash orphan cleanup is an operator responsibility.
+  Code/component/system coverage stays unknown with explanatory bases.
+- `course_acceptance` records real control/report exchanges and counts. The
+  configured runbook, AC/oracle inventory and current models are in
+  [phase4-delivery.md](phase4-delivery.md), [phase4-test-mapping.md](phase4-test-mapping.md)
+  and [system-models.md](system-models.md). `render.yaml` proposes the composed
+  startup and explicit course schema settings; actual hosting configuration
+  and deployed SHA remain to be checked.
+
+Validation at this checkpoint: full isolated PostgreSQL suite **965 passed**
+(29.61s), full SQLite suite **961 passed,4 PostgreSQL-only skips** (21.32s);
+a real loopback HTTP/PostgreSQL run **41 passed,5 skipped,0 failed/error**,
+with4/4 control checks passing. The local historical-contract audit now reports
+**44 passed,0 failed/error**. All62 Python syntax targets, configured Ruff,
+dependency consistency and whitespace checks passed. These are local engineering
+results, not deployed acceptance, runtime coverage or bidirectional conformance.
+
+The earlier API-import/testing-foundation PR8 is now merged on `main` at
+`824d73a91e58102d31b28758644fa1872a84b177`. No merge or deployment was performed
+by this release-candidate implementation. The remaining minimum finish line is
+review/release configuration, exact-SHA deployment, own and both cross-team
+reports, pod scope/fixture decisions, verified registry values and submission
+assembly. Runtime AI, verified reviewer access, deadline automation and product
+UI remain outside this increment.
 
 ## Baseline and scope
 
@@ -312,3 +371,97 @@ Ruff and whitespace checks passed. Synthetic results are in the excluded local
 team folder. No production/deployed target, database, merge, or deployment was
 used. The optional server binds only 127.0.0.1:8001 with one process and loses
 sessions on restart.
+
+## Recovered Phase 2 contract and real operation audit - October 31, 2026
+
+The four supplied phase PDFs were reviewed as reference evidence, separating
+assignment prompts, submitted designs, reported historical results, and fresh
+observations. Phase2_Gradescope Section 5.1 supplies the original nine-operation
+OpenAPI 3.1.0 / version 1.0.0 contract. This resolves the missing historical
+baseline noted earlier; current pod agreement and deployed conformance remain
+unverified. Phase 3 also supplies historical test evidence and validation-order
+claims, not a new bidirectional acceptance result.
+
+Preserved a normalized contract under `contracts/`, without the PDFs, grades,
+or participant information. Independent JSON Schema response checks enforce
+types, dates, constants, internal references, and empty 204 bodies while
+keeping diagnostics free of payload values. The baseline is not regenerated
+from current implementation models and does not silently absorb differences.
+
+Added `python -m contract_audit --format markdown` (JSON by default). It runs
+real incident routes in a disposable local store, includes all nine operations
+and requirement mappings, and reports absent/error checks honestly. It accepts
+no remote URL and does not load application `.env` credentials. Explicit local
+`TEST_DATABASE_URL` selects guarded PostgreSQL schemas; otherwise it uses
+temporary SQLite. Exit 1 indicates observed differences, not a broken auditor.
+
+The first PostgreSQL audit recorded **44 checks: 38 passed, 6 failed**:
+explicit null create-source, timezone-free occurredAt, null review-rationale,
+lookup-before-field-validation for review and related routes, and permitted
+additional properties on related requests. These are recorded, not fixed in
+this checkpoint. Shared-fixture restoration stays partial; unexercised 500/503
+paths stay unverified. The supplied positive assessment example is a separate
+current-heuristic mismatch because the actual shared label package is absent.
+
+Validation: **686 PostgreSQL tests passed** (16.33s); **683 SQLite passes,
+3 PostgreSQL-only skips** (13.54s), with three existing warnings. Fifty schema
+and nine auditor regressions were added; those 59 also passed after formatting.
+All 44 Python syntax targets, configured Ruff, dependency, and whitespace checks
+passed. The new work is isolated on `phase4/contract-conformance`, based on the
+prior API-import/walkthrough checkpoint. No application behavior, deployed
+target, normal database, external message, or filing was changed. PDFs and
+local generated reports remain excluded. See the
+[reconciliation record](phase2-contract-reconciliation.md).
+
+## Team 102 repository and live control discovery - October 31, 2026
+
+At the user's request, searched public GitHub and identified `dredinbo15/SEC450`;
+its testing document explicitly identifies Team 102/Pod C and the known source
+hostname. Reviewed source at `1ef6b270b686ecc845c4946a84514475e01205af` without
+executing it. System and tester bases are now known: `https://seclog.redinbo.win`
+and that origin plus `/tester`. The deployed commit remains unverified.
+
+Direct unauthenticated HTTPS checks confirmed index/health 200, non-destructive
+system setup 201 and a valid system report 200. The peer's own tester, invoked
+against its own system, returned 28 results: 27 pass and one source-IP-filter
+skip due to absent suitable recent data. Run and saved report matched, remained
+stable, and passed our report models. Coverage reported 8/8 peer operations and
+7/30 peer criteria executed, with code null/null. This is not our tester or a
+bidirectional incident-contract acceptance run. No saved API key, remote reset,
+external message, or third-party code execution was used.
+
+Their source exposes a log/query project API and course controls, not our nine
+incident operations; the known host also returned 404 for `/api/v1/health`.
+Their versioned fixtures provide detector-rule labels, not the missing shared
+materiality labels. Their optional push adapter already maps reports to our
+incident POST, disabled by default in example configuration; deployed enablement
+is unknown. Coordinate push/pull ownership and receiver deduplication before
+adding automatic incident creation. The current snapshot importer does not
+create incidents. These discoveries narrow the remaining pod questions to
+project scope, fixtures/labels, and session/coverage rules, rather than unknown
+course-control URLs. See the [source and observation record](team102-repository-review.md).
+
+## Request-contract alignment - November 1, 2026
+
+Corrected the six observed request differences without changing contract
+version 1.0.0 or response nullability. Optional source/rationale may be omitted
+but explicit null is rejected; occurredAt requires an RFC 3339 string and a
+timezone; related requests accept/ignore additional properties. Review and
+related handlers now use prepared dependencies that resolve the incident in
+the selected request session before validating decoded body fields. They reuse
+the cached session and preserve database overrides. FastAPI still treats
+malformed JSON as an envelope-syntax 400 before dependencies run; this boundary
+is documented and tested rather than silently described as a field error.
+
+The real local 44-check audit now has no failed/error checks. Shared fixture
+agreement/restoration, unexercised server-error paths, the historical heuristic
+example and deployed acceptance remain separate limitations.
+
+Checkpoint validation covers the complete previous regression suite plus
+44 model, 17 preparation, and seven HTTP-alignment cases: **754 PostgreSQL
+passes** (25.39s); **751 SQLite passes and three PostgreSQL-only skips**
+(19.03s), with three existing warnings. The older timestamp test now uses an
+explicit UTC timezone; new HTTP tests prove invalid timestamps/null fields do
+not create records or decisions, extra link fields are not persisted, and
+media checks precede missing-ID field errors. System-session and live transport
+modules are being developed separately and are not part of this checkpoint.

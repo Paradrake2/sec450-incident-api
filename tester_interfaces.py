@@ -1,4 +1,4 @@
-"""Adapter boundaries for the course tester; no project or network oracle."""
+"""Adapter boundaries shared by mock and configured HTTP course testers."""
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -27,8 +27,9 @@ class TargetGateway(Protocol):
     """A trusted adapter, not a user-provided URL fetcher.
 
     prepare must require target HTTP 201 and return its echoed session ID.
-    A future live adapter must enforce network address policy, redirects,
-    response bounds and timeouts. This milestone supplies test doubles only.
+    Implementations enforce their own network policy, response bounds and
+    timeouts. HttpTargetGateway supplies the configured HTTP implementation;
+    lifecycle unit tests use independent doubles.
     """
 
     async def prepare(self, target_url: str, session_id: str) -> str: ...

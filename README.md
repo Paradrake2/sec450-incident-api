@@ -71,8 +71,13 @@ Invoke-RestMethod -Uri "$base/incidents/$($incident.id)"
 | --- | --- | --- | --- |
 | `title` | string | Yes | Nonblank, 1–200 characters |
 | `log` | string | Yes | Nonblank, plain-text evidence |
-| `occurredAt` | ISO 8601 date-time | Yes | Example: `2026-10-18T14:30:00Z` |
-| `source` | string | No | Up to 100 characters |
+| `occurredAt` | RFC 3339 date-time string | Yes | Timezone required; example: `2026-10-18T14:30:00Z` |
+| `source` | string | No | Up to 100 characters; omit when unknown, explicit null is invalid |
+
+Review `rationale` is likewise optional but must be a string when supplied.
+Related-incident requests accept additional properties without storing them.
+Review/related requests check incident existence before decoded body fields;
+malformed JSON is rejected as a syntax error before dependency resolution.
 
 ### Assessment and lifecycle
 
@@ -162,8 +167,15 @@ The repository includes `render.yaml` defining the Render Python web service, st
 The web service starts using:
 
 ```bash
-uvicorn main:app --host 0.0.0.0 --port $PORT
+uvicorn delivery_app:create_app --factory --workers 1 --host 0.0.0.0 --port $PORT
 ```
+
+The delivery entry point preserves the normal API and adds an isolated `/system`
+and configured `/tester`. Public startup requires explicit `COURSE_TEST_DATABASE_URL`;
+the proposed Blueprint uses generated schemas in the existing physical database
+with `COURSE_TEST_ALLOW_SHARED_DATABASE=1`. This is internal test isolation, not
+a shared database agreement with Team 102. Verify actual hosting settings before
+deploying. See [the Phase 4 runbook](docs/phase4-delivery.md).
 
 Render free-tier instances may spin down when idle, resulting in a cold-start delay. Database plans may have expiration, storage, and availability restrictions. Check the current service/database plan before relying on long-term retention. Deployment should be tied to a specific Git commit SHA when reporting test evidence.
 
@@ -173,7 +185,7 @@ Render free-tier instances may spin down when idle, resulting in a cold-start de
 
 - Root-level `test_api.py`, `test_triage.py`, `test_review.py`, `test_related.py`, `test_disclosure.py`, `test_contract.py`, and `test_database.py` cover API behavior, deterministic screening, histories, relations, disclosure versions, the documented common contract, and database selection/isolation.
 - `.github/workflows/main.yml` runs pytest; `.github/workflows/pytest.yml` runs syntax verification, the configured Ruff selection, and SQLite/PostgreSQL regressions on pushes/pull requests.
-- Root-level `tests.yml` is outside `.github/workflows/` and is not an active GitHub Actions workflow. No deployed-service test script is present in this repository.
+- Root-level `tests.yml` is outside `.github/workflows/` and is not an active GitHub Actions workflow. `python -m course_acceptance` invokes the deployed tester and saves actual control/result evidence.
 
 To run the local tests:
 
@@ -182,7 +194,26 @@ py -m pip install -r requirements-dev.txt
 py -m pytest -q
 ```
 
-Without `TEST_DATABASE_URL`, API tests use temporary SQLite stores. Set an explicit loopback PostgreSQL test URL to run the same suite against disposable schemas in a dedicated test database; see [PostgreSQL test commands](docs/postgresql.md#run-postgresql-regressions). Tests do not inherit the application's `DATABASE_URL` and must not target the shared Render database. The [tester protocol foundation](docs/cross-team-testing.md) is mounted at `/tester`, with its schema at `/tester/openapi.json`. Default setup fails closed until a trusted target adapter and agreed project suite are configured. Root system setup/report and cross-team validation are still pending; `/api/v1/test/reset` is not an isolated session-setup endpoint. Current baseline and implementation validation are recorded in [the status log](docs/implementation-status.md).
+Without `TEST_DATABASE_URL`, API tests use temporary SQLite stores. Set an explicit loopback PostgreSQL test URL to run the same suite against disposable schemas in a dedicated test database; see [PostgreSQL test commands](docs/postgresql.md#run-postgresql-regressions). Tests do not inherit the application's `DATABASE_URL` and must not target the shared Render database.
+
+The [Phase 4 delivery](docs/phase4-delivery.md) configures real HTTP checks for all
+nine incident operations. Its system setup/report live under `/system/test`, and
+tester setup/run/report under `/tester/test`. Run it locally on port 8002:
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn delivery_app:create_local_app --factory --env-file .env --host 127.0.0.1 --port 8002 --workers 1
+# In another terminal:
+.\.venv\Scripts\python.exe -m course_acceptance --local
+```
+
+Open [the local tester docs](http://127.0.0.1:8002/tester/docs) and
+[isolated incident API docs](http://127.0.0.1:8002/system/docs). Use target base
+`http://127.0.0.1:8002/system`. Setup and reset seed candidate synthetic fixtures
+in session-owned stores. The normal root `/api/v1/test/reset` remains destructive
+and is not the course setup endpoint. The suite includes 41 executable checks
+and five explicit gaps; it does not establish shared labels or full pod
+conformance. See [models](docs/system-models.md), [AC/test mapping](docs/phase4-test-mapping.md)
+and [implementation evidence](docs/implementation-status.md).
 
 To walk through setup, run, and saved-report retrieval locally, use the separate
 synthetic demo:
@@ -200,8 +231,32 @@ API keys, or invented coverage measurements. It demonstrates the tester
 lifecycle, including ordinary failures and saved aborts; it does not run the
 incident API or establish cross-team conformance. See the [local walkthrough](docs/cross-team-testing.md#walk-through-the-tester-locally)
 for request bodies and expected responses. The normal `main:app` tester remains
-unconfigured while system controls, session fixtures/routing, real gateway/cases,
-coverage, and deployment are still pending.
+unconfigured; use the delivery entry point for real project checks. Coverage
+inventories, pod fixture/scope agreement and deployed cross-team evidence remain
+pending.
+
+The recovered Phase 2 common contract is now preserved separately from generated
+OpenAPI. To audit all nine real incident operations in a disposable local store:
+
+```powershell
+.\.venv\Scripts\python.exe -m contract_audit --format markdown
+```
+
+This command reports observed success/error checks, requirement mappings, and
+unverified statuses; it does not accept a remote target or claim cross-team
+conformance. Exit `1` means observed differences were found, while `2` indicates
+configuration failure. Missing shared fixtures and coverage stay unverified.
+See [contract reconciliation and known differences](docs/phase2-contract-reconciliation.md)
+and the [historical contract baseline](contracts/README.md). The local pytest
+suite checks the auditor itself; a passing regression run does not erase the
+contract differences reported by the audit.
+
+Team 102's course system/tester URLs and detector fixtures were located in its
+public repository and the live control flow was checked. These resolve the
+previously unknown control URLs; the peer's query API still differs from our
+nine incident operations. See the [repository and live-observation record](docs/team102-repository-review.md)
+for pinned sources, test results, push-integration findings, and remaining pod
+scope/fixture questions.
 
 **Recorded Phase 3 deployed-service check:** October 18, 2026, approximately 23:57 UTC — **23 run, 23 passed, 0 failed**. Checks included service availability, creation/retrieval, state filtering, positive/negative assessments, human review, relations, draft generation, and failure responses (`400`, `404`, `409`, `415`). The run was made against `https://sec450-incident-api.onrender.com`. This is a **custom deployed API test suite**, not a claim that the complete instructor-provided OpenAPI acceptance suite or security/performance tests have passed. The matching `sec450-test-results.json` can be retained as submission evidence.
 
@@ -229,12 +284,17 @@ When documenting testing for grading, include the exact deployed commit, test ti
 - **Heuristic screening:** Weighted regex rules can miss significant incidents or flag benign text; no independently validated accuracy and no legal decision authority.
 - **Drafts are templates:** No final Form 8-K is produced, filed, or approved. Nature, scope, timing, and impact require legal confirmation.
 - **Lifecycle and integrity gaps:** `CLOSED` has no route. Review and draft histories exist; conditional state updates protect competing assessments/reviews, with transaction races verified on PostgreSQL. A complete mutation audit trail and tamper-evident storage remain planned. `/health` does not prove database readiness.
-- **Testing gaps:** The instructor's full acceptance suite, comprehensive cross-team coverage, and performance/security testing are not yet established. `POST /api/v1/test/reset` clears records instead of re-seeding a pod-agreed fixture database.
+- **Testing gaps:** Full cross-team conformance and performance/security testing are not established. Isolated reset restores Team 105 candidate fixtures, not a pod-agreed dataset. Code/component/system coverage is explicitly unknown. Test sessions/reports live in one process, capped at 32 per registry, and disappear after restart; run one worker/instance.
 
 ## Repository layout
 
 ```text
 main.py                       FastAPI routes and persistence models
+delivery_app.py               Product + isolated system + configured real tester
+course_system.py              Isolated course system controls and routing
+system_sessions.py            Session-owned disposable stores
+incident_suite.py             Ordered incident API checks and explicit gaps
+course_acceptance.py          Repeatable HTTP tester invocation/evidence client
 triage.py                     Deterministic assessment rules
 disclosure_templates.py       Non-final disclosure templates
 contract_schemas.py           Shared response models

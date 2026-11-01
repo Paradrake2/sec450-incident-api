@@ -1,0 +1,17 @@
+flowchart TB
+    caller["Product API caller"] --> root["Product facade at /\nExisting incident routes and docs"]
+    runner["Course caller / teammate runner"] --> system["Isolated system at /system\n/test/setup and /test/report"]
+    runner --> tester["Configured tester at /tester\n/test/setup, /test/run, /test/report"]
+    system --> registry["SystemSessionRegistry\nRetained stores; optional session header"]
+    registry --> scoped["One generated PostgreSQL schema per session\nLocal mode can use disposable SQLite"]
+    system --> isolated["Incident facade\nSame incident handlers; trusted request store"]
+    isolated --> scoped
+    root --> normal["Normal application database"]
+    tester --> coordinator["TesterCoordinator\nOne run and immutable report per session"]
+    coordinator --> suite["46-case incident suite\n41 executable checks + 5 explicit gaps"]
+    suite --> gateway["HttpTargetGateway\nExact approved bases; bounded HTTPS requests"]
+    gateway --> system
+    gateway --> peer["Team 102 approved system base\nRead-only incident compatibility probes\nNo reset or incident writes"]
+    fixtures["team105-incident-v1\nCandidate synthetic fixtures\nNot pod approved"] --> registry
+    manual["Operator-run report import CLI"] --> source["Team 102 read-only report API"]
+    manual --> evidence["Migrated source snapshot + observation tables\nNo automatic incident creation"]

@@ -11,7 +11,7 @@ def new_incident(client, log="ordinary access log"):
 @pytest.mark.parametrize("occurred_at", [
     "2026-10-31T09:00:00-04:00",
     "2026-10-31T18:30:00+05:30",
-    "2026-10-31T13:00:00",
+    "2026-10-31T13:00:00Z",
 ])
 def test_occurrence_offset_preserves_utc_instant_after_storage(occurred_at):
     with TestClient(app) as client:

@@ -1,0 +1,55 @@
+erDiagram
+    INCIDENTS ||--o{ INCIDENT_REVIEWS : records
+    INCIDENTS ||--o{ DISCLOSURE_DRAFTS : generates
+    INCIDENTS ||--o{ INCIDENT_RELATIONS : incident_a
+    INCIDENTS ||--o{ INCIDENT_RELATIONS : incident_b
+    SOURCE_REPORT_SNAPSHOTS ||--o{ SOURCE_REPORT_OBSERVATIONS : observed_as
+    INCIDENTS {
+        string id PK
+        string title
+        text log
+        datetime occurred_at
+        datetime created_at
+        string source "nullable"
+        string state
+        text assessment "nullable JSON snapshot"
+        text review "nullable latest JSON snapshot"
+        text related "legacy JSON; not authoritative"
+    }
+    INCIDENT_REVIEWS {
+        string id PK
+        string incident_id FK
+        string decision
+        text reviewer "submitted identifier"
+        text rationale "nullable"
+        datetime reviewed_at
+    }
+    INCIDENT_RELATIONS {
+        string incident_a_id PK,FK
+        string incident_b_id PK,FK
+    }
+    DISCLOSURE_DRAFTS {
+        string id PK
+        string incident_id FK
+        text draft
+        datetime generated_at
+        boolean final "false in application responses"
+    }
+    SOURCE_REPORT_SNAPSHOTS {
+        string id PK
+        string source_system
+        string source_report_id
+        string canonical_sha256
+        string raw_sha256
+        bytes original_content
+        datetime imported_at
+    }
+    SOURCE_REPORT_OBSERVATIONS {
+        string id PK
+        string snapshot_id FK
+        datetime fetched_at
+        text source_url
+        text request_id "nullable"
+        string retrieval_method
+        string raw_sha256
+    }

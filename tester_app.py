@@ -33,23 +33,26 @@ ERROR_RESPONSES = {
 def create_tester_app(
     coordinator: TesterCoordinator | None = None,
     approved_targets: tuple[str, ...] = (),
+    *,
+    allow_loopback: bool = False,
 ) -> FastAPI:
     """Build an independent protocol app; an unconfigured instance fails closed.
 
     No gateway, cases, or approved targets are inferred from request data or
     environment variables. The default instance cannot make network requests.
-    An actual outbound adapter and project suite remain separate milestones.
+    delivery_app supplies the actual outbound adapter and incident suite.
     """
     service = coordinator if coordinator is not None else TesterCoordinator()
-    targets = ApprovedTargets(approved_targets)
+    targets = ApprovedTargets(approved_targets, allow_loopback=allow_loopback)
     application = FastAPI(
-        title="SEC450 Tester Protocol Foundation",
+        title="SEC450 Automated Incident Tester",
         version="0.1.0",
         description=(
             "Setup, one-run execution, and immutable report retrieval. The "
-            "default service has no outbound adapter or agreed project suite; "
-            "setup fails closed until both are explicitly configured. "
-            "Mock-target validation does not establish cross-team conformance."
+            "delivery entry point configures an HTTP adapter and incident "
+            "checks; a standalone default instance fails closed. Synthetic "
+            "fixtures are a Team 105 candidate. Pod scope/labels and actual "
+            "bidirectional reports are required for cross-team conformance."
         ),
     )
     application.state.coordinator = service
