@@ -184,6 +184,25 @@ py -m pytest -q
 
 Without `TEST_DATABASE_URL`, API tests use temporary SQLite stores. Set an explicit loopback PostgreSQL test URL to run the same suite against disposable schemas in a dedicated test database; see [PostgreSQL test commands](docs/postgresql.md#run-postgresql-regressions). Tests do not inherit the application's `DATABASE_URL` and must not target the shared Render database. The [tester protocol foundation](docs/cross-team-testing.md) is mounted at `/tester`, with its schema at `/tester/openapi.json`. Default setup fails closed until a trusted target adapter and agreed project suite are configured. Root system setup/report and cross-team validation are still pending; `/api/v1/test/reset` is not an isolated session-setup endpoint. Current baseline and implementation validation are recorded in [the status log](docs/implementation-status.md).
 
+To walk through setup, run, and saved-report retrieval locally, use the separate
+synthetic demo:
+
+```powershell
+.\.venv\Scripts\python.exe -m tester_demo
+.\.venv\Scripts\python.exe -m tester_demo --scenario fail
+.\.venv\Scripts\python.exe -m tester_demo --scenario abort
+.\.venv\Scripts\python.exe -m tester_demo --serve
+```
+
+Server mode exposes [interactive tester docs](http://127.0.0.1:8001/tester/docs).
+The demo uses three synthetic cases with no external requests, database access,
+API keys, or invented coverage measurements. It demonstrates the tester
+lifecycle, including ordinary failures and saved aborts; it does not run the
+incident API or establish cross-team conformance. See the [local walkthrough](docs/cross-team-testing.md#walk-through-the-tester-locally)
+for request bodies and expected responses. The normal `main:app` tester remains
+unconfigured while system controls, session fixtures/routing, real gateway/cases,
+coverage, and deployment are still pending.
+
 **Recorded Phase 3 deployed-service check:** October 18, 2026, approximately 23:57 UTC — **23 run, 23 passed, 0 failed**. Checks included service availability, creation/retrieval, state filtering, positive/negative assessments, human review, relations, draft generation, and failure responses (`400`, `404`, `409`, `415`). The run was made against `https://sec450-incident-api.onrender.com`. This is a **custom deployed API test suite**, not a claim that the complete instructor-provided OpenAPI acceptance suite or security/performance tests have passed. The matching `sec450-test-results.json` can be retained as submission evidence.
 
 **Cross-team manual checks:** Team 102 reported **4/4** successful checks against this service (connectivity, create, list, retrieve) on October 18, 2026. Team 105's initial six queries against Team 102's separate read-only API yielded one successful health check and five authenticated calls blocked by `401` (no valid test credentials); those protected functions were therefore not verified. Neither result proves complete bidirectional contract coverage.

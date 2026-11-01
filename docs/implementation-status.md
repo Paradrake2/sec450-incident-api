@@ -287,3 +287,28 @@ Full local verification: **627 PostgreSQL passes** (22.51s); **624 SQLite
 passes, 3 PostgreSQL-only skips** (12.77s), with three existing warnings. This
 adds eight probe and three client cases. All 39 Python files compiled; Ruff,
 dependency validation, and whitespace checks passed. No merge or deployment.
+
+## Local tester walkthrough - October 31, 2026
+
+The user requested a readiness review and local run. The mounted tester controls
+are implemented, but normal `main:app` remains unconfigured. System-side root
+setup/report, isolated session fixtures/routing, live target transport, agreed
+project cases, coverage instrumentation/inventories, and cross-team delivery
+are still outstanding. Data-source probes are separate from these controls.
+
+Added `tester_demo.py` as an independent synthetic walkthrough and loopback
+server. Its injected gateway and three DEMO cases contact no target and access
+no application database, `.env`, or API keys. Pass and intentional-failure runs
+return HTTP 200; an intentional abort returns 500 after saving pass/error/skip
+results. All scenarios preserve report snapshots and reject another run with
+409. Coverage remains null/null with explanations. This does not test incident
+operations or establish course/pod conformance.
+
+Local verification: **285 existing protocol tests passed** (1.91s; one existing
+dependency warning); CLI walkthroughs verified all three scenarios. An actual
+loopback HTTP run verified setup 201, pre-run report 409, run 200, report 200,
+repeat run 409, and unchanged report 200. All 40 Python files compiled; configured
+Ruff and whitespace checks passed. Synthetic results are in the excluded local
+team folder. No production/deployed target, database, merge, or deployment was
+used. The optional server binds only 127.0.0.1:8001 with one process and loses
+sessions on restart.

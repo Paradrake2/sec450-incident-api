@@ -123,6 +123,49 @@ documented target credentials. Keep credentials out of URLs and reports.
 
 ## Local validation
 
+### Walk through the tester locally
+
+The tester lifecycle is ready for a synthetic local walkthrough. The complete
+cross-team interface is still partial: root system controls, isolated session
+fixtures/routing, a real target gateway and project cases, coverage measurement,
+and deployment/cross-team runs remain outstanding as listed above.
+
+From the repository root, after installing `requirements-dev.txt`, run:
+
+```powershell
+.\.venv\Scripts\python.exe -m tester_demo
+.\.venv\Scripts\python.exe -m tester_demo --scenario fail
+.\.venv\Scripts\python.exe -m tester_demo --scenario abort
+```
+
+The demo calls the tester's HTTP controls through an in-process client. It
+prepares a session (`201`), checks that the report is not ready (`409`), runs
+three synthetic cases, retrieves the saved report (`200`), rejects a second
+run (`409`), and verifies that the saved report did not change. A normal case
+failure is recorded in a completed suite with run HTTP `200`. An unexpected
+tester abort returns `500` after saving a partial report for retrieval.
+
+For an interactive walkthrough, start the separate loopback demo server:
+
+```powershell
+.\.venv\Scripts\python.exe -m tester_demo --serve
+```
+
+Open [the local tester docs](http://127.0.0.1:8001/tester/docs). In order:
+
+1. Call `POST /test/setup` with `{"target_url":"https://synthetic.invalid/sec450"}`.
+2. Copy the returned `session_id`; use it with `GET /test/report` to see `409`.
+3. Call `POST /test/run` with `{"session_id":"<returned value>"}`.
+4. Retrieve `GET /test/report` again, then repeat the run to see `409`.
+
+The fixed target is synthetic and never resolved or contacted. These cases do
+not exercise the incident API or Team 102. The demo reads no API keys or `.env`,
+uses no database, and reports unavailable coverage as null/null with an
+explanation. The server uses one process; restarting loses its demo sessions.
+Stop it with Ctrl+C. The ordinary `main:app` tester stays unconfigured.
+
+### Regression tests
+
 Use the normal disposable-store harness. With no `TEST_DATABASE_URL`, tests
 use SQLite; an explicit approved local test URL opts into PostgreSQL schemas.
 
