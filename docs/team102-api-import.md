@@ -10,12 +10,18 @@ public endpoint or automatically create incidents or human decisions.
 The supplied Query API guide documents authenticated, read-only access to
 `https://seclog.redinbo.win/v1/reports/{id}`. It describes `report_id` and a
 report `body`, but does not provide a complete detail-response example. The
-current isolated parser assumes a JSON object with a matching numeric
-`report_id` and object `body`; unknown fields are preserved. A sanitized source
-example is pending, so this shape is provisional and live compatibility has
-not been verified. The importer rejects unsupported shapes rather than guessing.
+current isolated parser requires a JSON object with a matching numeric
+`report_id` and object `body`; unknown fields are preserved. One authenticated
+live detail sample matched this minimal envelope. The complete body contract,
+identity/correction semantics, and production import behavior remain unverified.
+The importer rejects unsupported shapes rather than guessing.
 
-Reports are fetched one explicit ID at a time. There is no background poller,
+The teammate expected their report GET to match our `IncidentResponse`. The
+read-only probe checked one live response without applying the importer's
+envelope assumption: its root had `report_id` and `body`, and neither the root
+nor inspected body matched our incident schema. No incident fields were inferred.
+
+The importer fetches one explicit ID at a time. There is no background poller,
 list cursor, or completeness guarantee. The guide's 24-hour default/31-day
 window/1,000-item list limit does not define a reliable incremental protocol
 for new or corrected reports. That agreement is needed before automatic sync.
@@ -25,6 +31,64 @@ source evidence. They cannot set an incident state, submit a human review,
 approve a draft, or establish independently verified facts. Mapping into
 application incidents/evidence revisions follows response-schema confirmation
 and the protected product boundary.
+
+## Read-only schema probe
+
+Install the development dependencies, including JSON Schema and RFC 3339
+date-time validation support:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+```
+
+When Team 102 provides access, put `SEC450_KEY` in the project's ignored `.env`
+file or local environment. Do not paste the key into chat or commit it. No
+database URL or migration is needed for the probe:
+
+```powershell
+.\.venv\Scripts\python.exe -m team102_probe
+```
+
+By default, the probe performs `GET /v1/reports?limit=1`, selects one supported
+identifier from the response, then performs one detail GET. This makes at most
+two requests and does not paginate or retry. An empty collection produces a
+`no_sample` result; the guide's default list window may simply contain no
+reports. To bypass discovery and make one detail request, provide a known
+numeric or UUID-style identifier:
+
+```powershell
+.\.venv\Scripts\python.exe -m team102_probe --report-id 123
+```
+
+The JSON summary compares the response against the repository's
+`contract_schemas.IncidentResponse` JSON Schema, with strict JSON types and
+date-time format checks. It checks the root and a bounded set of known wrappers,
+so a direct match is distinguished from an incident nested inside an envelope.
+A separate guide comparison checks only a numeric `report_id` and object
+`body`; it does not validate the report body's contents. If both formats are
+found, the classification is `ambiguous`, and both match paths are reported.
+
+Output contains known field names/types, missing required fields, sanitized
+validation paths and keywords, and request counts. It omits report values,
+unknown field names, API keys, and raw error bodies. The probe does not save or
+import reports, contact a database, or change incident state. A matching sample
+supports response-shape compatibility for that sample only; it does not prove
+the entire API, endpoint behavior, error responses, or common contract conforms.
+
+| Exit code | Meaning |
+| --- | --- |
+| `0` | An incident schema match was found, including a nested or ambiguous match; inspect the classification and paths. |
+| `1` | Configuration, identifier, or HTTP/response error prevented the comparison. |
+| `2` | Guide-envelope match only, or an unsupported response shape. |
+| `3` | No report sample was available. |
+
+Synthetic tests cover the probe's validation behavior. On October 31, 2026,
+one authenticated list GET and one detail GET returned a `guide_report` match,
+with no incident-schema matches. Known body fields included summary, timeline,
+ai_assessment, matched_rule, requester, data_destination, raw_lines, integrity,
+collection_gaps, and previous_cluster_id. Only redacted diagnostics were emitted;
+the payload was not saved or imported. Source-to-incident field mapping remains
+deliberate follow-up work; this sample is not full contract conformance evidence.
 
 ## Explicit database migration
 
@@ -84,7 +148,8 @@ database credentials, or raw upstream errors. No automatic request retries
 are performed, and a 429 provides bounded `Retry-After` metadata for a later
 operator-controlled retry. Product authentication/access controls are still
 pending; use synthetic data for this prototype until protected operation is
-established. This milestone did not fetch live incident data.
+established. The preservation milestone used synthetic fixtures; the later
+read-only probe fetched one live sample without importing or saving its payload.
 
 ## Evidence and retry behavior
 
@@ -111,7 +176,9 @@ established. This milestone did not fetch live incident data.
 
 The client has one fixed HTTPS origin, sends the API key only as a Bearer
 header, verifies TLS, ignores environment proxies, and never follows redirects.
-It performs only the documented report GET. Explicit HTTPX operation timeouts
+It performs only GET requests to the fixed report-list and report-detail paths.
+Shape-neutral reads support the probe, while imports retain strict provisional
+report-envelope validation. Explicit HTTPX operation timeouts
 and a 2 MiB decoded body limit bound individual waits and accepted payloads;
 the timeout is not a measured end-to-end service guarantee. All response-size,
 JSON/schema, authentication, rate-limit, upstream, timeout, and transport

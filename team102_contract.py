@@ -34,6 +34,16 @@ def report_url(report_id: int) -> str:
 
 
 @dataclass(frozen=True)
+class SourceRead:
+    """Bounded source response before any report-schema assumption is applied."""
+
+    raw_content: bytes
+    fetched_at: datetime
+    source_url: str
+    request_id: str | None = None
+
+
+@dataclass(frozen=True)
 class ReportFetch:
     report_id: int
     raw_content: bytes
@@ -56,6 +66,23 @@ def _invalid_constant(value):
     raise ValueError("Non-finite JSON number")
 
 
+def decode_source_json(raw_content: bytes):
+    """Decode bounded, unambiguous JSON without assuming its record shape."""
+    try:
+        if not isinstance(raw_content, bytes) or len(raw_content) > MAX_REPORT_BYTES:
+            raise ValueError("Response is not bounded bytes")
+        document = json.loads(
+            raw_content.decode("utf-8"), object_pairs_hook=_unique_object,
+            parse_constant=_invalid_constant,
+        )
+        # Reject numeric overflow and escaped lone surrogates, including in
+        # list/scalar responses used by the read-only schema probe.
+        json.dumps(document, ensure_ascii=False, allow_nan=False).encode("utf-8")
+        return document
+    except (ValueError, UnicodeError, RecursionError, TypeError):
+        raise SourceApiError("invalid_response", "Team 102 returned unsupported JSON") from None
+
+
 def parse_report(raw_content: bytes, expected_report_id: int) -> dict:
     """Validate only the guide's report identity/body; retain unknown fields.
 
@@ -64,12 +91,7 @@ def parse_report(raw_content: bytes, expected_report_id: int) -> dict:
     """
     validate_report_id(expected_report_id)
     try:
-        if not isinstance(raw_content, bytes) or len(raw_content) > MAX_REPORT_BYTES:
-            raise ValueError("Report is not bounded bytes")
-        document = json.loads(
-            raw_content.decode("utf-8"), object_pairs_hook=_unique_object,
-            parse_constant=_invalid_constant,
-        )
+        document = decode_source_json(raw_content)
         if not isinstance(document, dict):
             raise ValueError("Report must be an object")
         report_id = document.get("report_id")
@@ -80,7 +102,7 @@ def parse_report(raw_content: bytes, expected_report_id: int) -> dict:
         # non-standard constants rejected by the decoder above.
         canonical_report(document)
         return document
-    except (ValueError, UnicodeError, RecursionError, TypeError):
+    except (SourceApiError, ValueError, UnicodeError, RecursionError, TypeError):
         raise SourceApiError(
             "invalid_response", "Team 102 returned an unsupported report response"
         ) from None

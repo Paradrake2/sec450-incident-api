@@ -229,3 +229,38 @@ and a sanitized source example has been requested. No automatic field mapping,
 incident creation, polling/cursor, or live compatibility claim is supplied.
 
 See [manual API import and migration notes](team102-api-import.md).
+
+## Read-only source schema probe - October 31, 2026
+
+The teammate expects Team 102's report GET to match our incident response.
+Added `python -m team102_probe` to test that expectation against one detail
+response, without imposing the importer's provisional envelope. It discovers
+one identifier using a bounded list GET, or accepts an explicit numeric/opaque
+identifier for one detail GET. There is no database access, import, or polling.
+
+The probe checks the repository's `IncidentResponse` JSON Schema with strict
+types and date-time formats. It distinguishes root and known-envelope matches
+and separately reports the guide's minimal numeric report_id/object body
+shape. Diagnostics contain known field names/types and sanitized validation
+paths, never report values or unknown property names. A sample match does not
+establish full API conformance. The existing importer still enforces its
+isolated provisional format until actual source compatibility is confirmed.
+
+Validation: **616 passed** on PostgreSQL 17.4 (14.24s); **613 passed, 3
+PostgreSQL-only skips** on SQLite (8.83s), with the three existing warnings.
+This includes 50 new schema-probe cases and 30 additional source-client cases.
+All 39 Python syntax targets, configured Ruff, dependency checks, and whitespace
+checks passed. Running the unconfigured CLI returned its sanitized missing-key
+error before network access. The user confirmed Team 102 has not yet provided
+an API key; live schema verification remains pending. No live report request,
+deployed migration, merge, or deployment was performed.
+
+The user subsequently supplied a Team 102 API credential, stored only in the
+ignored local `.env`. An authenticated probe then completed two read-only GETs
+(list limit=1 and one detail). The detail matched numeric `report_id`/object
+`body`, with no `IncidentResponse` match at the root or inspected body. Known
+body fields included summary, timeline, AI assessment, rule/requester/destination,
+raw lines, integrity, collection gaps, and previous cluster ID. This confirms
+the minimal envelope for that sample, not the full API or body contract.
+Only redacted schema diagnostics were emitted; no payload was retained or
+imported, and no application database or deployed service was modified.

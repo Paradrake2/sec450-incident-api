@@ -268,3 +268,70 @@ def test_invalid_credential_configuration_raises_without_echoing_key(key):
 def test_request_bounds_cannot_be_disabled(kwargs):
     with pytest.raises(ValueError):
         Team102Client(_KEY, **kwargs)
+
+
+@pytest.mark.parametrize("report_id", [42, "42", "018fa2f4-0762-7e80-a942-0123456789ab", "source_report-1"])
+def test_shape_neutral_detail_read_accepts_safe_ids_without_report_envelope(report_id):
+    raw = b'{"id":"incident-42","title":"source-only","state":"RECEIVED"}'
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        assert request.method == "GET"
+        assert str(request.url) == f"https://seclog.redinbo.win/v1/reports/{report_id}"
+        return httpx.Response(200, content=raw, headers={"Content-Type": "application/json"})
+
+    with Team102Client(_KEY, transport=httpx.MockTransport(handler)) as client:
+        result = client.read_report(report_id)
+    assert result.raw_content == raw
+    assert result.source_url.endswith(f"/v1/reports/{report_id}")
+    assert result.fetched_at.tzinfo == UTC
+    assert len(requests) == 1
+
+
+@pytest.mark.parametrize("raw", [b'{"reports":[]}', b'[{"id":"incident-42"}]', b'{"items":[{"body":{}}]}'])
+def test_list_sample_uses_one_fixed_get_without_assuming_envelope_or_traversing(raw):
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        assert request.method == "GET"
+        assert str(request.url) == "https://seclog.redinbo.win/v1/reports?limit=1"
+        assert request.headers["Authorization"] == f"Bearer {_KEY}"
+        return httpx.Response(200, content=raw, headers={"Content-Type": "application/json"})
+
+    with Team102Client(_KEY, transport=httpx.MockTransport(handler)) as client:
+        result = client.read_reports_sample()
+    assert result.raw_content == raw
+    assert result.source_url == "https://seclog.redinbo.win/v1/reports?limit=1"
+    assert len(requests) == 1
+
+
+@pytest.mark.parametrize("report_id", [
+    None, True, False, -1, 1.2, "", "a" * 129, "../reports", ".", "..",
+    "https://attacker.invalid/", "//attacker.invalid", "a/b", "a\\b",
+    "id?limit=2", "id#fragment", "%2f", "two words", "é", "id\r\nheader",
+])
+def test_shape_neutral_detail_rejects_unsafe_identifiers_before_transport(report_id):
+    with (
+        Team102Client(_KEY, transport=httpx.MockTransport(lambda request: pytest.fail("Unexpected request"))) as client,
+        pytest.raises(ValueError),
+    ):
+        client.read_report(report_id)
+
+
+@pytest.mark.parametrize("method", ["read_report", "read_reports_sample"])
+def test_shape_neutral_reads_keep_transport_size_and_json_guards(method):
+    with Team102Client(_KEY, transport=_transport_response(content=b'{"secret": NaN}')) as client:
+        with pytest.raises(SourceApiError, match="unsupported JSON"):
+            getattr(client, method)(42) if method == "read_report" else getattr(client, method)()
+    with Team102Client(_KEY, transport=_transport_response(), max_response_bytes=1) as client:
+        with pytest.raises(SourceApiError, match="size limit"):
+            getattr(client, method)(42) if method == "read_report" else getattr(client, method)()
+
+
+def test_import_fetch_still_rejects_incident_shaped_response():
+    with Team102Client(_KEY, transport=_transport_response(content=b'{"id":"incident-42"}')) as client:
+        assert client.read_report(42).raw_content == b'{"id":"incident-42"}'
+        with pytest.raises(SourceApiError, match="unsupported report response"):
+            client.fetch_report(42)

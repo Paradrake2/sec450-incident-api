@@ -1,8 +1,8 @@
 """Bounded, manual-only access to Team 102's read-only report endpoint.
 
-The supplied guide does not include a complete report-detail example. Validation
-therefore uses the provisional identity/body boundary in team102_contract; no
-list envelope, polling checkpoint, or report update behavior is assumed here.
+Shape-neutral reads support inspecting a single source sample. Imports retain
+the provisional identity/body boundary in team102_contract; no polling
+checkpoint or report update behavior is assumed here.
 """
 
 import math
@@ -16,12 +16,16 @@ import httpx
 from team102_contract import (
     MAX_REPORT_BYTES,
     ReportFetch,
+    SOURCE_BASE_URL,
     SourceApiError,
+    SourceRead,
+    decode_source_json,
     parse_report,
-    report_url,
+    validate_report_id,
 )
 
 _SAFE_REQUEST_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\Z")
+_SAFE_REPORT_ID = re.compile(r"[A-Za-z0-9_-]{1,128}\Z")
 _MAX_RETRY_AFTER_SECONDS = 24 * 60 * 60
 
 
@@ -68,7 +72,7 @@ def _check_status(response: httpx.Response) -> None:
 
 
 class Team102Client:
-    """Fetch a single supplied report ID; never follows redirects or retries.
+    """Read source reports; never follows redirects or retries.
 
     Credentials are opaque header values: no key-prefix assumption is made.
     TLS verification stays enabled; proxy/environment settings are not trusted.
@@ -123,8 +127,38 @@ class Team102Client:
         self._client.close()
 
     def fetch_report(self, report_id: int) -> ReportFetch:
-        """Return the bounded decoded JSON bytes with UTC retrieval provenance."""
-        url = report_url(report_id)
+        """Fetch an importable report using the guide's numeric ID/body format."""
+        validate_report_id(report_id)
+        result = self.read_report(report_id)
+        parse_report(result.raw_content, report_id)
+        return ReportFetch(
+            report_id=report_id,
+            raw_content=result.raw_content,
+            fetched_at=result.fetched_at,
+            source_url=result.source_url,
+            request_id=result.request_id,
+        )
+
+    def read_report(self, report_id: str | int) -> SourceRead:
+        """Read one report without assuming its record schema or numeric ID.
+
+        Only a bounded ASCII path segment is accepted, including UUIDs. URLs,
+        separators, percent escapes, and query strings cannot be supplied.
+        """
+        if type(report_id) is int:
+            if report_id < 0:
+                raise ValueError("report_id must be a safe source identifier")
+            report_id = str(report_id)
+        if not isinstance(report_id, str) or _SAFE_REPORT_ID.fullmatch(report_id) is None:
+            raise ValueError("report_id must be a safe source identifier")
+        return self._read(f"{SOURCE_BASE_URL}/v1/reports/{report_id}")
+
+    def read_reports_sample(self) -> SourceRead:
+        """Read a list sample with limit=1; do not infer or traverse its shape."""
+        return self._read(f"{SOURCE_BASE_URL}/v1/reports?limit=1")
+
+    def _read(self, url: str) -> SourceRead:
+        """Apply the same transport bounds before examining any JSON shape."""
         try:
             with self._client.stream("GET", url) as response:
                 _check_status(response)
@@ -143,12 +177,11 @@ class Team102Client:
                         )
                     content.extend(chunk)
                 raw_content = bytes(content)
-                parse_report(raw_content, report_id)
+                decode_source_json(raw_content)
                 request_id = response.headers.get("X-Request-ID")
                 if request_id is not None and _SAFE_REQUEST_ID.fullmatch(request_id) is None:
                     request_id = None
-                return ReportFetch(
-                    report_id=report_id,
+                return SourceRead(
                     raw_content=raw_content,
                     fetched_at=datetime.now(UTC),
                     source_url=url,

@@ -1,2 +1,4 @@
 -r requirements.txt
 pytest>=8,<10
+jsonschema>=4.23,<5
+rfc3339-validator>=0.1.4,<1

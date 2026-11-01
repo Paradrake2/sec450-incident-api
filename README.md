@@ -118,8 +118,15 @@ not established as an inter-team agreement.
 An operator-only importer can fetch one explicitly selected report and retain
 an immutable content snapshot plus retrieval provenance. It uses migrations
 and has no public import endpoint, automatic polling, or automatic incident
-creation. Its minimal response parser still needs confirmation against a
-sanitized Team 102 example; all current validation uses synthetic responses.
+creation. The complete source body contract and incident mapping still need
+confirmation; importer tests use synthetic responses.
+The read-only `python -m team102_probe` command can discover one report and
+compare its detail response with our incident schema without importing data.
+It prints redacted schema diagnostics and makes at most two GET requests;
+`--report-id` bypasses discovery. One authenticated live sample matched the
+guide's numeric `report_id`/object `body` envelope, not our `IncidentResponse`.
+This establishes that sample's shape, not full source-contract conformance.
+The API key belongs only in ignored local secrets.
 See [API import setup and limits](docs/team102-api-import.md) and
 [company-data and reviewer-access design](docs/company-data-design.md).
 The report-feed integration and course cross-team testing remain separate.
