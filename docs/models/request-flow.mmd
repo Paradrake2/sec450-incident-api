@@ -1,0 +1,21 @@
+flowchart TB
+    incoming["Incident request"] --> mounted{"Under /system/api/v1?"}
+    mounted -->|yes| lease["Require prepared session\nExplicit X-Test-Session-Id or latest ready store\nNo normal database fallback"]
+    mounted -->|no| normal["Normal facade selects configured application engine"]
+    lease --> media
+    normal --> media
+    media{"Create, review, or related POST\nwith application/json?"} -->|wrong media| unsupported["415 structured error"]
+    media -->|valid or not applicable| envelope{"JSON envelope parses?"}
+    envelope -->|no| syntax["400 syntax error before dependencies"]
+    envelope -->|yes| existing{"Review or related operation?"}
+    existing -->|yes| lookup["Look up primary incident in selected request session"]
+    lookup -->|missing| absent["404 structured error"]
+    lookup -->|found| fields["Validate decoded body fields\nRelated extras accepted and ignored"]
+    existing -->|no| other["Route dependency / body validation\nAssessment and disclosure look up incident in handler"]
+    fields -->|invalid| invalid["400 structured error"]
+    fields -->|valid| guards["State and domain guards\nRelated target existence; duplicate link checks"]
+    other --> guards
+    guards -->|related target missing| absent
+    guards -->|invalid transition or duplicate| conflict["409 structured error"]
+    guards -->|allowed| transaction["Execute route transaction on selected store\nReview state + history committed together"]
+    transaction --> success["Serialize typed response\nRelease request session and course lease"]

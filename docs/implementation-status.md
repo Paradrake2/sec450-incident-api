@@ -1,6 +1,65 @@
 # Implementation status and decisions
 
-Updated October 31, 2026. This log records repository work separately from the proposed roadmap in `SEC_Project_Codex_Implementation_Plan.md`.
+Updated November 1, 2026. This log records repository work separately from the proposed roadmap in `SEC_Project_Codex_Implementation_Plan.md`.
+
+## Current Phase 4 release candidate — November 1
+
+`phase4/contract-conformance` now contains a configured delivery entry point,
+an isolated course system, real HTTP incident tests, an acceptance evidence
+client, candidate fixtures and current models. This is implemented and locally
+verified; deployment/cross-team completion is still pending. Earlier sections
+below are checkpoint history, including statements about then-missing features.
+
+- `delivery_app:create_app --factory` preserves the root product API and mounts
+  isolated system `/system` and configured tester `/tester`. The public factory
+  requires explicit course PostgreSQL settings; the loopback factory can use
+  disposable SQLite. Startup opens the normal facade and course registry
+  lifespans explicitly; the isolated facade never runs normal-store startup.
+- Each system session owns a temporary store/generated PostgreSQL schema with
+  no public fallback. Setup seeds the versioned Team 105 candidate profile;
+  isolated reset restores it transactionally. Trusted request state selects
+  the engine and seed. Normal product records remain unchanged by course runs.
+- The optional session header selects retained stores; headerless suites use
+  the latest prepared session and must run serially. One active request per
+  session prevents overlapping mutations. Response completion now occurs only
+  after dependency cleanup and lease release, including bodyless responses and
+  Content-Length streams. This fixed intermittent busy409 responses found by
+  real TCP/PostgreSQL testing but missed by earlier in-process checks.
+- `HttpTargetGateway` enforces exact target bases, public DNS/address checks at
+  connection time, original TLS hostname, no redirects/proxy inheritance,
+  deadlines and response bounds. Credentials from the source importer are not
+  forwarded. Local mode explicitly permits only approved loopback literals.
+- The ordered incident suite has46 results:41 executable checks and5 explicit
+  gaps. All9 operations are represented. Project writes require the exact own
+  isolated base and a successful reset; the Team102 read-only feed is not reset.
+  Classification/reset agreement, CLOSED, server-failure injection and legal
+  draft quality remain qualified gaps, not passing checks.
+- System and tester registries each retain32 sessions; full capacity rejects
+  new setup without evicting reports. Run one worker/instance. Reports and IDs
+  disappear after restart; crash orphan cleanup is an operator responsibility.
+  Code/component/system coverage stays unknown with explanatory bases.
+- `course_acceptance` records real control/report exchanges and counts. The
+  configured runbook, AC/oracle inventory and current models are in
+  [phase4-delivery.md](phase4-delivery.md), [phase4-test-mapping.md](phase4-test-mapping.md)
+  and [system-models.md](system-models.md). `render.yaml` proposes the composed
+  startup and explicit course schema settings; actual hosting configuration
+  and deployed SHA remain to be checked.
+
+Validation at this checkpoint: full isolated PostgreSQL suite **965 passed**
+(29.61s), full SQLite suite **961 passed,4 PostgreSQL-only skips** (21.32s);
+a real loopback HTTP/PostgreSQL run **41 passed,5 skipped,0 failed/error**,
+with4/4 control checks passing. The local historical-contract audit now reports
+**44 passed,0 failed/error**. All62 Python syntax targets, configured Ruff,
+dependency consistency and whitespace checks passed. These are local engineering
+results, not deployed acceptance, runtime coverage or bidirectional conformance.
+
+The earlier API-import/testing-foundation PR8 is now merged on `main` at
+`824d73a91e58102d31b28758644fa1872a84b177`. No merge or deployment was performed
+by this release-candidate implementation. The remaining minimum finish line is
+review/release configuration, exact-SHA deployment, own and both cross-team
+reports, pod scope/fixture decisions, verified registry values and submission
+assembly. Runtime AI, verified reviewer access, deadline automation and product
+UI remain outside this increment.
 
 ## Baseline and scope
 

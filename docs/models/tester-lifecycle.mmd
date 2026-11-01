@@ -1,0 +1,23 @@
+stateDiagram-v2
+    [*] --> PREPARING: POST /test/setup with approved target_url
+    PREPARING --> READY: target setup returns 201 with matching session_id
+    PREPARING --> [*]: preparation fails; reservation released; no tester session
+    READY --> RUNNING: first POST /test/run claims session
+    RUNNING --> COMPLETED: all cases attempted and final report stored
+    RUNNING --> ABORTED: timeout, cancellation, or unexpected runner failure
+    COMPLETED --> COMPLETED: GET /test/report returns detached stored snapshot
+    ABORTED --> ABORTED: GET /test/report returns partial report with remaining skips
+    note right of READY
+        GET report before completion returns 409.
+        Unknown session returns 404.
+    end note
+    note right of RUNNING
+        Another run returns 409.
+        Case-level target failures are results;
+        they need not abort the suite.
+    end note
+    note right of COMPLETED
+        Completed and aborted sessions cannot rerun.
+        Session/report retention is process-local.
+        Capacity rejects new setup without eviction.
+    end note

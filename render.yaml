@@ -4,7 +4,7 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn delivery_app:create_app --factory --workers 1 --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
@@ -13,6 +13,15 @@ services:
         fromDatabase:
           name: sec450-db
           property: connectionString
+      - key: COURSE_TEST_DATABASE_URL
+        fromDatabase:
+          name: sec450-db
+          property: connectionString
+      # Separate generated schemas; never reset the product's public schema.
+      - key: COURSE_TEST_ALLOW_SHARED_DATABASE
+        value: "1"
+      - key: PUBLIC_BASE_URL
+        value: https://sec450-incident-api.onrender.com
 databases:
   - name: sec450-db
     plan: free

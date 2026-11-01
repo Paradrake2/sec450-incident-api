@@ -1,0 +1,26 @@
+stateDiagram-v2
+    [*] --> RECEIVED: create incident
+    RECEIVED --> POTENTIALLY_MATERIAL: assess; advisory flag true
+    RECEIVED --> UNDER_REVIEW: assess; advisory flag false
+    POTENTIALLY_MATERIAL --> MATERIAL_CONFIRMED: review MATERIAL
+    POTENTIALLY_MATERIAL --> NOT_MATERIAL: review NOT_MATERIAL
+    UNDER_REVIEW --> MATERIAL_CONFIRMED: review MATERIAL
+    UNDER_REVIEW --> NOT_MATERIAL: review NOT_MATERIAL
+    NOT_MATERIAL --> MATERIAL_CONFIRMED: later review MATERIAL
+    MATERIAL_CONFIRMED --> MATERIAL_CONFIRMED: generate non-final draft; append version
+    note right of RECEIVED
+        Assessment only in RECEIVED.
+        Review requires an assessed state.
+        State violations return 409.
+    end note
+    note right of MATERIAL_CONFIRMED
+        Human review is submitted data.
+        No verified reviewer authentication exists.
+        No downgrade or filing transition exists.
+    end note
+    state CLOSED
+    note right of CLOSED
+        Accepted enum / legacy state only.
+        No public operation enters CLOSED.
+        Review and related writes reject CLOSED.
+    end note

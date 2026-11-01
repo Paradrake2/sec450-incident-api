@@ -1,5 +1,11 @@
 # Cross-team testing protocol foundation
 
+**Historical foundation notes:** the configured real system/tester is now
+implemented in `delivery_app.py`. Use [the current Phase 4 runbook](phase4-delivery.md)
+for real incident checks on port 8002, deployment configuration and cross-run
+commands. The unconfigured `main:app` and synthetic port-8001 demo described
+below remain available; they do not describe the configured delivery entry point.
+
 This milestone implements the generic tester control plane. It is partial
 T-02 work, with shared protocol models useful to T-01. It does not establish
 pod project conformance, a deployed tester, or completed cross-team testing.
