@@ -7,7 +7,8 @@ from datetime import datetime, timezone
 from uuid import uuid4
 from json import dumps, loads, JSONDecodeError
 
-from fastapi import Depends, FastAPI, Request, HTTPException, Path as PathParam
+from fastapi import APIRouter, Depends, FastAPI, Request, HTTPException, Path as PathParam
+from fastapi.routing import APIRoute
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from fastapi.openapi.utils import get_openapi
@@ -208,6 +209,11 @@ app.state.database_engine = engine
 
 def get_engine(request: Request) -> Engine:
     """Select server-configured storage; request data cannot choose a database."""
+    if hasattr(request.state, "system_test_engine"):
+        selected = request.state.system_test_engine
+        if not isinstance(selected, Engine):
+            error("TEST_CONTEXT_ERROR", "Invalid isolated request context", 500)
+        return selected
     return request.app.state.database_engine
 
 
@@ -264,7 +270,11 @@ async def unexpected_error(request, exc):
 
 @app.middleware("http")
 async def require_json(request, call_next):
-    if request.method == "POST" and request.url.path.startswith("/api/v1/incidents") and (request.url.path == "/api/v1/incidents" or request.url.path.endswith(("/review", "/related"))):
+    path = request.scope.get("path", "")
+    root = request.scope.get("root_path", "")
+    if root and path.startswith(root) and (path == root or path[len(root):].startswith("/")):
+        path = path[len(root):] or "/"
+    if request.method == "POST" and path.startswith("/api/v1/incidents") and (path == "/api/v1/incidents" or path.endswith(("/review", "/related"))):
         if request.headers.get("content-type", "").split(";")[0].strip().lower() != "application/json":
             return JSONResponse(status_code=415, content={"error": "UNSUPPORTED_MEDIA_TYPE", "message": "Use application/json"})
     return await call_next(request)
@@ -275,12 +285,15 @@ def health():
     return {"status": "ok"}
 
 @app.post("/api/v1/test/reset", status_code=204, responses=ERROR_500)
-def reset(session: Session = Depends(get_session)):
+def reset(request: Request, session: Session = Depends(get_session)):
     # WARNING: Spec requires unauthenticated reset. Deploy only with synthetic demo data.
     session.execute(delete(DisclosureRow))
     session.execute(delete(RelationRow))
     session.execute(delete(ReviewRow))
     session.execute(delete(IncidentRow))
+    seed = getattr(request.state, "system_test_seed", None)
+    if seed is not None:
+        seed(session)
     session.commit()
     return Response(status_code=204)
 
@@ -456,15 +469,16 @@ def list_disclosures(incident_id: str = PathParam(alias="incidentId"), session: 
 # handler. The API has never returned 422 for these request-model errors.
 # Remove that misleading default from generated OpenAPI without affecting
 # runtime request/response behavior.
-def contract_openapi():
-    if app.openapi_schema is None:
-        schema = get_openapi(title=app.title, version=app.version, routes=app.routes)
+def contract_openapi(application=None):
+    application = app if application is None else application
+    if application.openapi_schema is None:
+        schema = get_openapi(title=application.title, version=application.version, routes=application.routes, servers=application.servers)
         for path in schema["paths"].values():
             for operation in path.values():
                 if isinstance(operation, dict) and "responses" in operation:
                     operation["responses"].pop("422", None)
-        app.openapi_schema = schema
-    return app.openapi_schema
+        application.openapi_schema = schema
+    return application.openapi_schema
 
 
 app.openapi = contract_openapi
@@ -473,3 +487,23 @@ app.openapi = contract_openapi
 # default configuration has no outbound gateway or project suite and cannot
 # prepare or execute a target until those adapters are explicitly supplied.
 app.mount("/tester", create_tester_app())
+
+
+def create_incident_app(database_engine=None):
+    """Build an independent facade over the same incident routes.
+
+    Each facade has its own state, middleware, OpenAPI cache and dependency
+    override provider. Mounted tester apps are not copied or recursively shared.
+    A course wrapper must supply its trusted request store before any API call;
+    it deliberately does not run this facade's normal-store lifespan.
+    """
+    application = FastAPI(title=app.title, version=app.version, lifespan=lifespan)
+    application.state.database_engine = engine if database_engine is None else database_engine
+    incident_routes = APIRouter()
+    incident_routes.routes.extend(route for route in app.routes if isinstance(route, APIRoute))
+    application.include_router(incident_routes)
+    application.exception_handlers.update(app.exception_handlers)
+    for middleware in reversed(app.user_middleware):
+        application.add_middleware(middleware.cls, *middleware.args, **middleware.kwargs)
+    application.openapi = lambda: contract_openapi(application)
+    return application

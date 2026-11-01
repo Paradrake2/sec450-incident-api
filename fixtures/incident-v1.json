@@ -1,0 +1,23 @@
+{
+  "profile_id": "team105-incident-v1",
+  "agreement_status": "candidate_not_pod_approved",
+  "label_basis": "Synthetic deterministic-rule fixtures; advisory flags are not human materiality decisions.",
+  "incidents": [
+    {
+      "id": "10500000-0000-4000-8000-000000000001",
+      "title": "Synthetic ransomware signal",
+      "log": "Synthetic ransomware affecting production servers",
+      "occurredAt": "2026-10-31T12:00:00Z",
+      "source": "team105-candidate-fixtures",
+      "expectedPotentiallyMaterial": true
+    },
+    {
+      "id": "10500000-0000-4000-8000-000000000002",
+      "title": "Synthetic routine maintenance",
+      "log": "Routine scheduled maintenance completed successfully",
+      "occurredAt": "2026-10-31T12:01:00Z",
+      "source": "team105-candidate-fixtures",
+      "expectedPotentiallyMaterial": false
+    }
+  ]
+}
