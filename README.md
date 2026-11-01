@@ -71,8 +71,13 @@ Invoke-RestMethod -Uri "$base/incidents/$($incident.id)"
 | --- | --- | --- | --- |
 | `title` | string | Yes | Nonblank, 1–200 characters |
 | `log` | string | Yes | Nonblank, plain-text evidence |
-| `occurredAt` | ISO 8601 date-time | Yes | Example: `2026-10-18T14:30:00Z` |
-| `source` | string | No | Up to 100 characters |
+| `occurredAt` | RFC 3339 date-time string | Yes | Timezone required; example: `2026-10-18T14:30:00Z` |
+| `source` | string | No | Up to 100 characters; omit when unknown, explicit null is invalid |
+
+Review `rationale` is likewise optional but must be a string when supplied.
+Related-incident requests accept additional properties without storing them.
+Review/related requests check incident existence before decoded body fields;
+malformed JSON is rejected as a syntax error before dependency resolution.
 
 ### Assessment and lifecycle
 

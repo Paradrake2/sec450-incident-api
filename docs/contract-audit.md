@@ -40,9 +40,9 @@ The original audit identifies nine common operations, below relative to `/api/v1
 
 - **RESET-FIXTURES (REQ-08):** Phase 2 promises resetting to a shared fixture state. The supplied plan does not establish a verified fixture seed and `POST /test/reset` currently only deletes records. Decide exact fixture dataset and ownership with Team 102 before changing reset semantics; otherwise report it as a deviation.
 - **LIFECYCLE-CLOSED (REQ-04):** `CLOSED` is an enum value but there is no agreed close operation. Do not unilaterally add a new common endpoint; either specify closure in the pod contract or update the model with an explicit limitation.
-- **REQUEST-EXTRA-FIELDS (REQ-08):** Link request uses `extra="forbid"`, while the recovered Phase 2 schema permits additional properties for that request. This is a current implementation deviation unless the pod explicitly agrees a new version.
+- **REQUEST-EXTRA-FIELDS (REQ-08), corrected:** Related requests now accept and ignore additional properties as the recovered schema permits; create/review requests remain closed.
 - **AUTHORIZATION (REQ-05):** The shared interface has no authentication, so a user-supplied reviewer identifier is not verification of an authorized human. Continue restricting deployment to synthetic test data and disclose this limitation.
-- **VALIDATION-PRECEDENCE (REQ-08):** The recovered Phase 2 visual model and Phase 3 submission require incident lookup `404` before field validation `400`, after the media-type check. Current invalid-body requests can return `400` first; the new audit records that deviation.
+- **VALIDATION-PRECEDENCE (REQ-08), corrected for fields:** Incident lookup now precedes decoded body field validation on review/related, after media checks. Malformed JSON is an explicit envelope-syntax `400` before dependencies. Selected-session overrides are retained.
 - **TRIAGE-FIXTURES (REQ-03):** Agree AC-03 labels and fixtures before treating the local deterministic cases as a remote tester's definitive oracle.
 - **SHARED-SPEC:** The historical Phase 2 contract is now available. Confirm its current pod status/version and obtain the still-missing fixtures, session routing, coverage inventories, cleanup rules, and request limits before making interoperability claims.
 

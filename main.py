@@ -4,7 +4,6 @@ import os
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Literal
 from uuid import uuid4
 from json import dumps, loads, JSONDecodeError
 
@@ -12,7 +11,6 @@ from fastapi import Depends, FastAPI, Request, HTTPException, Path as PathParam
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from fastapi.openapi.utils import get_openapi
-from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import create_engine, Column, String, Text, DateTime, ForeignKey, CheckConstraint, Boolean, or_, select, delete, update
 from sqlalchemy.orm import DeclarativeBase, Session
 from sqlalchemy.engine import Engine
@@ -20,6 +18,8 @@ from sqlalchemy.exc import IntegrityError
 
 from triage import assess_log
 from disclosure_templates import build_draft
+from request_models import CreateIncident, ReviewRequest, LinkRequest
+from request_preparation import build_preparation
 from tester_app import create_tester_app
 from contract_schemas import (
     IncidentResponse, AssessmentResponse, DisclosureResponse, ErrorResponse,
@@ -78,24 +78,6 @@ class DisclosureRow(Base):
     draft = Column(Text, nullable=False)
     generated_at = Column(DateTime(timezone=True), nullable=False)
     final = Column(Boolean, nullable=False, default=False)
-
-
-class CreateIncident(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    title: str = Field(min_length=1, max_length=200)
-    log: str = Field(min_length=1)
-    occurredAt: datetime
-    source: str | None = Field(default=None, max_length=100)
-
-class ReviewRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    decision: Literal["MATERIAL", "NOT_MATERIAL"]
-    reviewer: str = Field(min_length=1)
-    rationale: str | None = None
-
-class LinkRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    relatedIncidentId: str = Field(min_length=1)
 
 
 def stamp(dt):
@@ -239,6 +221,14 @@ def get_session(database_engine: Engine = Depends(get_engine)) -> Iterator[Sessi
     with Session(database_engine) as session:
         yield session
 
+
+# Resolve the incident through the selected request session before validating
+# fields in a decoded review/related body. Malformed JSON is still rejected by
+# FastAPI's envelope parser before dependencies run.
+prepare_review, prepare_related = build_preparation(
+    get_session, get_incident, ReviewRequest, LinkRequest,
+)
+
 # Declared responses keep Swagger and downstream schema checks aligned with
 # the existing structured-error handler (which returns 400, not FastAPI's 422).
 ERROR_400 = {400: {"model": ErrorResponse, "description": "Invalid request"}}
@@ -363,10 +353,10 @@ def serialize_review(row):
 
 
 @app.post("/api/v1/incidents/{incidentId}/review", response_model=IncidentResponse, responses={**ERROR_400, **ERROR_404, **ERROR_409, **ERROR_415, **ERROR_500})
-def review(data: ReviewRequest, incident_id: str = PathParam(alias="incidentId"), session: Session = Depends(get_session)):
+def review(prepared=Depends(prepare_review), session: Session = Depends(get_session)):
+    row, data = prepared
     if not data.reviewer.strip():
         error("INVALID_REQUEST", "reviewer must not be blank", 400, "reviewer")
-    row = get_incident(session, incident_id)
     if data.decision not in ALLOWED_REVIEW_DECISIONS.get(row.state, ()):
         error("INVALID_STATE", "Review is not permitted in current state", 409)
 
@@ -403,8 +393,8 @@ def list_reviews(incident_id: str = PathParam(alias="incidentId"), session: Sess
     return [serialize_review(item) for item in reviews]
 
 @app.post("/api/v1/incidents/{incidentId}/related", response_model=IncidentResponse, responses={**ERROR_400, **ERROR_404, **ERROR_409, **ERROR_415, **ERROR_500})
-def relate(data: LinkRequest, incident_id: str = PathParam(alias="incidentId"), session: Session = Depends(get_session)):
-    row = get_incident(session, incident_id)
+def relate(prepared=Depends(prepare_related), session: Session = Depends(get_session)):
+    row, data = prepared
     other = get_incident(session, data.relatedIncidentId)
     if row.state == "CLOSED" or other.state == "CLOSED":
         error("INVALID_STATE", "Closed incidents cannot be modified", 409)

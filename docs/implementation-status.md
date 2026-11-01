@@ -381,3 +381,28 @@ adding automatic incident creation. The current snapshot importer does not
 create incidents. These discoveries narrow the remaining pod questions to
 project scope, fixtures/labels, and session/coverage rules, rather than unknown
 course-control URLs. See the [source and observation record](team102-repository-review.md).
+
+## Request-contract alignment - November 1, 2026
+
+Corrected the six observed request differences without changing contract
+version 1.0.0 or response nullability. Optional source/rationale may be omitted
+but explicit null is rejected; occurredAt requires an RFC 3339 string and a
+timezone; related requests accept/ignore additional properties. Review and
+related handlers now use prepared dependencies that resolve the incident in
+the selected request session before validating decoded body fields. They reuse
+the cached session and preserve database overrides. FastAPI still treats
+malformed JSON as an envelope-syntax 400 before dependencies run; this boundary
+is documented and tested rather than silently described as a field error.
+
+The real local 44-check audit now has no failed/error checks. Shared fixture
+agreement/restoration, unexercised server-error paths, the historical heuristic
+example and deployed acceptance remain separate limitations.
+
+Checkpoint validation covers the complete previous regression suite plus
+44 model, 17 preparation, and seven HTTP-alignment cases: **754 PostgreSQL
+passes** (25.39s); **751 SQLite passes and three PostgreSQL-only skips**
+(19.03s), with three existing warnings. The older timestamp test now uses an
+explicit UTC timezone; new HTTP tests prove invalid timestamps/null fields do
+not create records or decisions, extra link fields are not persisted, and
+media checks precede missing-ID field errors. System-session and live transport
+modules are being developed separately and are not part of this checkpoint.

@@ -33,10 +33,10 @@ operations. Sources: `Phase2_Gradescope.pdf`, pp.13-17 and 18-32.
 | Topic | Recovered baseline and current difference | Required treatment |
 | --- | --- | --- |
 | Reset fixtures | Section 5.1 promises removal of test-created data **and** restoration of shared fixtures. Current reset deletes records without seeding them. | Report partial behavior; agree a versioned fixture set and restoration check. An empty database alone does not prove fixture restoration. |
-| Optional request fields | Request `source` (p.24) and review `rationale` (p.26) may be omitted but their request schemas allow strings, not explicit null. Current inputs also accept null. Response schemas separately allow null. | Distinguish optional from nullable; tighten request validation while preserving omission and documented nullable responses. |
-| Request timestamps | Create `occurredAt` is a date-time formatted string (p.24). RFC 3339 date-time requires a timezone, while the current request parser accepts a naive timestamp and treats it as UTC. | Reject malformed request timestamps without changing normalization of valid timestamps or legacy stored records. |
-| Related-request extras | Inline request schema (pp.22-23) has no `additionalProperties: false`; JSON Schema therefore permits extra properties. Current request model rejects them. | Align the implementation with the recovered schema, or record a pod-approved contract change. |
-| Validation precedence | The Phase 2 validation diagram (p.10) checks media, existence, fields, then state. Phase 3 p.13 explicitly reports pod agreement on 404 before 400. Current body validation can produce 400 before incident lookup. | Audit an unknown ID plus invalid body separately from ordinary 400/404 cases; reconcile implementation with the documented order. |
+| Optional request fields | Request `source` (p.24) and review `rationale` (p.26) may be omitted but their request schemas allow strings, not explicit null. Response schemas separately allow null. | Corrected: explicit null returns 400; omission and nullable responses remain supported. |
+| Request timestamps | Create `occurredAt` is a date-time formatted string (p.24). RFC 3339 date-time requires a timezone. | Corrected: require an RFC 3339 string with timezone, preserving UTC normalization and legacy stored timestamps. |
+| Related-request extras | Inline request schema (pp.22-23) has no `additionalProperties: false`; JSON Schema therefore permits extra properties. | Corrected: accept and ignore extra properties without persisting them or changing link meaning. |
+| Validation precedence | The Phase 2 validation diagram (p.10) checks media, existence, fields, then state. Phase 3 p.13 reports agreement on 404 before 400. | Corrected for decoded-body fields through selected-session dependencies. Malformed JSON remains an envelope-syntax 400 before dependencies; this boundary is explicit and tested. |
 | Positive assessment example | Phase 2 pp.29-30 illustrates an employee-database access log with `potentiallyMaterial: true`. The current heuristic returns false for that exact log. | Retain this as a diagnostic example, separate from approved fixture labels. Resolve the example/rule mismatch and obtain the shared positive/negative labels. |
 | Internal-error status | The Phase 2 diagram p.10 shows downstream 503; Section 5.1 YAML documents application 500 and health 503. Phase 3 p.13 describes 503 as health-only. | Use the operation-specific YAML as the explicit response baseline and record the model ambiguity; do not claim a database-readiness check that is not implemented. |
 | CLOSED | CLOSED is an enum value, but Section 5.1 has no operation that reaches it. Phase 3 pp.13,15 acknowledges this. | Document the unreachable state; do not invent a shared close endpoint. |
@@ -71,9 +71,15 @@ checks not exercised remain unverified. The historical positive assessment
 example is a separate mismatch, outside those six failures. These findings
 are observed differences, not failing tests of the reporting tool itself.
 
+The request-alignment checkpoint corrects those six observed cases; the same
+44-check HTTP audit now has no failures. Shared fixture restoration,
+unexercised 500/503 paths, deployed validation, and the historical classification
+example remain separate. The existence-before-validation guarantee applies to
+decoded body fields; FastAPI rejects malformed JSON before resolving dependencies.
+
 This is neither complete T-01/T-02 delivery nor deployed cross-team conformance.
-Stage the unambiguous schema fixes and documented validation-order correction,
-then add isolated system sessions, real target adapters/cases, fixture and
+The request fixes are implemented; next add isolated system sessions,
+real target adapters/cases, fixture and
 coverage agreements, and bidirectional deployed runs with saved versioned reports.
 
 ## Source record
