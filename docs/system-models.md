@@ -1,8 +1,8 @@
 # Phase 4 system models
 
-Updated November 1, 2026. These models describe the repository's Phase 4 delivery composition, including the isolated system and configured incident tester. They are **source models, not evidence that this composition is deployed**. The release commit, configured service entry point, live results, and registry entry must be recorded separately.
+These models describe the Phase 4 delivery composition, including the isolated system and configured incident tester. They describe implemented components; release identity and live acceptance evidence are maintained separately.
 
-The product architecture supplied by the team remains a roadmap. Runtime AI extraction, administrator-approved reviewer accounts, reviewer authorization, deadline calculation, automated filing, and a product review UI are not implemented by this increment. The implemented assessment is the deterministic advisory screening in `triage.py`.
+The broader product architecture remains a roadmap. Runtime AI extraction, administrator-approved reviewer accounts, reviewer authorization, deadline calculation, automated filing, and a product review UI are not implemented by this increment. The implemented assessment is the deterministic advisory screening in `triage.py`.
 
 ## Component and deployment model
 
@@ -11,7 +11,7 @@ The standalone diagram is [architecture.mmd](models/architecture.mmd).
 ```mermaid
 flowchart TB
     caller["Product API caller"] --> root["Product facade at /\nExisting incident routes and docs"]
-    runner["Course caller / teammate runner"] --> system["Isolated system at /system\n/test/setup and /test/report"]
+    runner["External test runner"] --> system["Isolated system at /system\n/test/setup and /test/report"]
     runner --> tester["Configured tester at /tester\n/test/setup, /test/run, /test/report"]
     system --> registry["SystemSessionRegistry\nRetained stores; optional session header"]
     registry --> scoped["One generated PostgreSQL schema per session\nLocal mode can use disposable SQLite"]

@@ -1,109 +1,76 @@
-# Team 102 repository and live testing discovery
+# Team 102 integration and testing compatibility
 
-Reviewed October 31, 2026. Source review and live observations are separate.
-No third-party source code was executed or modified.
+The source-data integration and the common testing controls are separate
+interfaces. A compatible setup/run/report exchange does not establish that
+both services implement the same incident operations or assessment rules.
 
-## Source identity and version
-
-The public repository is [dredinbo15/SEC450](https://github.com/dredinbo15/SEC450).
-Its testing document explicitly identifies Team 102, Pod C, and names the
-already known `seclog.redinbo.win` hostname. This review pins source to
-`1ef6b270b686ecc845c4946a84514475e01205af`; it does not identify the deployed SHA.
-
-The [testing contract](https://github.com/dredinbo15/SEC450/blob/1ef6b270b686ecc845c4946a84514475e01205af/docs/testing-interface.md)
-documents these bases:
+## Documented service bases
 
 | Role | Base URL | Controls |
 | --- | --- | --- |
 | System | `https://seclog.redinbo.win` | `POST /test/setup`, `GET /test/report` |
 | Tester | `https://seclog.redinbo.win/tester` | `POST /test/setup`, `POST /test/run`, `GET /test/report` |
 
-The `/test` controls require no caller credential. The reviewed
-[implementation](https://github.com/dredinbo15/SEC450/blob/1ef6b270b686ecc845c4946a84514475e01205af/sec450/api/testing.py)
-registers a system session without deleting collected data. It documents a
-temporary server-issued read-only key for its own tester runs. The ordinary
-`/v1` data feed still requires its API key. Setup is registration, not a shared
-fixture reset; sessions/reports are in memory and not durable across restarts.
+The documented `/test` controls do not require a caller credential. Ordinary
+`/v1` source-data requests require their own API key. The source service's
+setup registers a test session without deleting collected logs; it is not a
+shared-fixture reset. Confirm behavior against the intended release before
+changing any integration or test policy.
 
-## Direct live observations
+Keep source credentials separate from course-test target configuration. The
+incident tester must not forward source API credentials to arbitrary targets
+or use source-read access as permission to reset data.
 
-The discovery used fixed HTTPS URLs, no redirects, and no saved API key.
-No global reset or collected-data modification was requested.
+## Project-interface compatibility
 
-| Request | Observed HTTP status |
-| --- | --- |
-| `GET /health` | 200 |
-| `GET /test` | 200; expected system/tester control inventory |
-| `GET /tester/test` | 200 |
-| `GET /api/v1/health` | 404 |
-| `POST /test/setup` with a unique synthetic session and empty setup | 201; session echoed |
-| `GET /test/report` for that session | 200; passed our strict system-report model |
+The source service exposes health, read-only events/logs/clusters/reports and
+integrity information. These are different shapes and operations from this
+application's nine-operation `/api/v1/incidents` workflow. A report's numeric
+`report_id` and object `body` envelope is not an `IncidentResponse`; no
+report-to-incident alias should be inferred from the resource names.
 
-A separate external invocation of **Team 102's tester against Team 102's own
-system** completed at `2026-11-01T03:25:07.965569+00:00` (UTC): setup 201,
-pre-run report 409, run 200, stored report 200, and system report 200. The suite
-report passed our strict report model, matched the run response, and stayed
-unchanged on another retrieval. A second run and duplicate system setup both
-returned 409 with valid classified protocol-error bodies.
+The common course-control routes can still be used to test protocol behavior:
+setup creates a session, a run claims it once, and report retrieval returns a
+stable saved report. A peer's successful self-check is not either required
+cross-team direction and does not verify this application's incident behavior.
+Record actual runner/target versions, outcomes, errors, skips and coverage for
+each intended cross-team run. Unknown coverage is not a passed requirement.
 
-It contained **28 results: 27 pass, 1 skip, no fail/error**. `filter-source-ip`
-was skipped because no recent event had a client IP to filter on. Reported
-coverage was 8/8 operations and 7/30 acceptance criteria, with code coverage
-null/null. These are Team 102's own executed-operation/criterion inventories,
-not our incident coverage and not counts of passed requirements. Their eight
-operation inventory also does not include the newer `/v1/logs` read.
+Source detector fixtures validate detection behavior, such as brute-force or
+scan rules. They do not establish agreed materiality, human-review or disclosure
+oracles. Detection severity must not be silently treated as a materiality label.
 
-This verifies the observed course-control sequence and response format, not a
-bidirectional cross-team incident acceptance run. The tested deployment SHA,
-all session/abort edge cases, and full coverage instrumentation remain
-unverified. Full local evidence is excluded from Git under `.team-local/`.
+## Incident delivery and preservation
 
-The reviewed source also caps its in-memory registries at 500 entries and can
-evict old sessions/reports; whole-suite abort handling saves a generic suite
-error rather than prior per-case progress. These are source-level limitations
-to reconcile with retention/partial-report expectations, not behaviors tested
-by this successful live flow.
+The source integration includes an optional report-to-incident forwarding
+adapter. Its example configuration disables forwarding and backfill; actual
+runtime enablement must be confirmed separately. The adapter maps reports into
+`title`, `log`, `occurredAt` and `source`, and tracks deliveries. Receiver-side
+idempotency after an ambiguous timeout still requires an agreed stable source
+identity and deduplication policy.
 
-## What their source provides
+The application's manual snapshot importer is a different path: it preserves
+source bytes and retrieval observations without creating incidents. Before
+adding automatic source-to-incident mapping, agree push/pull ownership so one
+report does not create duplicate application incidents through both routes.
+See [report preservation](team102-api-import.md) and the
+[company-data boundary design](company-data-design.md).
 
-The reviewed [application routes](https://github.com/dredinbo15/SEC450/blob/1ef6b270b686ecc845c4946a84514475e01205af/sec450/api/app.py)
-provide health, read-only events/logs/clusters/reports/integrity, and the course
-controls. They do not implement our nine-operation `/api/v1/incidents` workflow.
-Swagger/OpenAPI are deliberately disabled in that source. The live 404 at
-`/api/v1/health` is consistent with this scope; no destructive route probes
-were made.
+## Remaining integration agreements
 
-The [fixture README](https://github.com/dredinbo15/SEC450/blob/1ef6b270b686ecc845c4946a84514475e01205af/tests/fixtures/README.md)
-documents six failed SSH logins in 50 seconds, expected to trigger detector
-R1/high at its five-failure/five-minute threshold. The
-[scenario generator](https://github.com/dredinbo15/SEC450/blob/1ef6b270b686ecc845c4946a84514475e01205af/tests/scenarios.py)
-provides ground truth for brute force, scans, injection, and large transfers.
-These fixtures are versioned by the source commit, not a separate fixture
-release found in the inspected files. They are detector oracles, not an agreed
-materiality/review/disclosure fixture set. Detection severity must not be
-silently treated as a materiality label.
+- Confirm whether the common project contract expects interchangeable incident
+  services or a producer/consumer workflow with distinct project interfaces.
+  Shared scope must not be reduced unilaterally.
+- Agree versioned fixture data, assessment labels and reset/restoration behavior.
+- Define session correlation, concurrency, retention, cleanup, timeout and
+  coverage inventories. Check these policies against each service's actual
+  protocol behavior rather than inferring them from a successful self-check.
+- Retain results for both cross-team directions and assign mismatch owners and
+  resolution plans. Keep source review, configuration and deployed observations
+  distinct.
 
-Team 102 already has an optional
-[report-to-incident adapter](https://github.com/dredinbo15/SEC450/blob/1ef6b270b686ecc845c4946a84514475e01205af/sec450/incidents.py).
-Its [example configuration](https://github.com/dredinbo15/SEC450/blob/1ef6b270b686ecc845c4946a84514475e01205af/config.example.yaml#L122-L128)
-targets our deployed incident POST, with forwarding and backfill disabled by
-default. Actual deployed enablement was not inspected. The adapter maps source
-reports into title/log/occurredAt/source and tracks deliveries; this does not
-give our receiver an idempotency guarantee after an ambiguous timeout. Before
-adding pull-to-incident mapping, agree push/pull ownership and stable source-ID
-deduplication. Our current snapshot importer creates no incidents.
-
-## Consequences for our next testing stage
-
-The course-control URLs no longer need to be requested. The remaining pod
-question is whether the agreed project contract requires interchangeable
-nine-operation incident services or producer/consumer integration with distinct
-suites. The supplied Phase 2 contract and their current project API differ;
-availability of matching course controls does not resolve that difference.
-
-Continue our known incident-contract corrections and isolated system-session
-work locally. Then configure approved HTTP transport and explicitly agreed
-cases for the intended peer interface. Do not run the incident reset suite
-against their log feed, or call their self-check a successful test of our API.
-Shared materiality labels, fixture restoration, session/coverage rules, and
-real bidirectional results still require completion.
+The configured incident suite permits project writes only on its own exact
+isolated system base after a successful reset. The peer source-data base is
+approved for read-only incident compatibility probes; it is not an approved
+incident-reset target. See [the release/test runbook](phase4-delivery.md) for
+runner commands and the current limitations.

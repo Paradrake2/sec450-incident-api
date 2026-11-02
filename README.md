@@ -1,6 +1,6 @@
 # SEC450 Incident Management API
 
-**Team 105 (Indy, Pod C) — Cybersecurity Incident Evidence & SEC Disclosure Support**
+**Cybersecurity Incident Evidence and SEC Disclosure Support**
 
 A REST API for receiving, storing, assessing, and reviewing cybersecurity incidents. The backend preserves submitted evidence and supports human review and preliminary disclosure drafting. The selected Team 102 integration uses its read-only Query API and preserves source reports in our application-owned PostgreSQL database. Shared PostgreSQL is deferred. The existing API also accepts incident JSON directly.
 
@@ -20,7 +20,7 @@ A REST API for receiving, storing, assessing, and reviewing cybersecurity incide
 
 ## Current implementation
 
-The backend supports incident submission, persistent storage, retrieval, state tracking, and deterministic assessment. Human reviews have append-only history, related-incident links are stored symmetrically, and each generated non-final disclosure draft is preserved. A mounted tester protocol foundation supports injected-adapter setup/run/report checks; its default configuration makes no outbound requests. System sessions, the real project suite, a product frontend, evidence revisions, authenticated reviewer access, and deadline tracking remain planned work. See [implementation status and decisions](docs/implementation-status.md).
+The backend supports incident submission, persistent storage, retrieval, state tracking, and deterministic assessment. Human reviews have append-only history, related-incident links are stored symmetrically, and each generated non-final disclosure draft is preserved. The configured `delivery_app` entry point adds isolated course-system sessions and a real HTTP incident suite. The standalone `main:app` still exposes an unconfigured tester foundation. Swagger provides interactive developer/tester pages; a product dashboard, reviewer UI, evidence revisions, authenticated reviewer access, and deadline tracking remain planned work. See the [local walkthrough](docs/local-walkthrough.md) and [implementation status and decisions](docs/implementation-status.md). Local verification is complete for the recorded checkpoint; deployed and cross-team completion remain separate.
 
 The system supports organizational processes relevant to **Regulation S-K Item 106** (cybersecurity risk management and governance disclosures) and **Form 8-K Item 1.05** (material cybersecurity incident reporting). The company, through authorized personnel, retains responsibility for materiality decisions and any SEC filing.
 
@@ -53,7 +53,7 @@ $base = "https://sec450-incident-api.onrender.com/api/v1"
 $body = @{
     title = "Synthetic SSH brute-force attempt"
     log = "Multiple failed logins and unauthorized access attempts against a test host"
-    occurredAt = "2026-10-18T14:30:00Z"
+    occurredAt = "2000-01-01T00:00:00Z"
     source = "SSH"
 } | ConvertTo-Json
 
@@ -71,7 +71,7 @@ Invoke-RestMethod -Uri "$base/incidents/$($incident.id)"
 | --- | --- | --- | --- |
 | `title` | string | Yes | Nonblank, 1–200 characters |
 | `log` | string | Yes | Nonblank, plain-text evidence |
-| `occurredAt` | RFC 3339 date-time string | Yes | Timezone required; example: `2026-10-18T14:30:00Z` |
+| `occurredAt` | RFC 3339 date-time string | Yes | Timezone required; example: `2000-01-01T00:00:00Z` |
 | `source` | string | No | Up to 100 characters; omit when unknown, explicit null is invalid |
 
 Review `rationale` is likewise optional but must be a string when supplied.
@@ -229,7 +229,7 @@ Server mode exposes [interactive tester docs](http://127.0.0.1:8001/tester/docs)
 The demo uses three synthetic cases with no external requests, database access,
 API keys, or invented coverage measurements. It demonstrates the tester
 lifecycle, including ordinary failures and saved aborts; it does not run the
-incident API or establish cross-team conformance. See the [local walkthrough](docs/cross-team-testing.md#walk-through-the-tester-locally)
+incident API or establish cross-team conformance. See the [local tools](docs/cross-team-testing.md#local-tools)
 for request bodies and expected responses. The normal `main:app` tester remains
 unconfigured; use the delivery entry point for real project checks. Coverage
 inventories, pod fixture/scope agreement and deployed cross-team evidence remain
@@ -258,11 +258,15 @@ nine incident operations. See the [repository and live-observation record](docs/
 for pinned sources, test results, push-integration findings, and remaining pod
 scope/fixture questions.
 
-**Recorded Phase 3 deployed-service check:** October 18, 2026, approximately 23:57 UTC — **23 run, 23 passed, 0 failed**. Checks included service availability, creation/retrieval, state filtering, positive/negative assessments, human review, relations, draft generation, and failure responses (`400`, `404`, `409`, `415`). The run was made against `https://sec450-incident-api.onrender.com`. This is a **custom deployed API test suite**, not a claim that the complete instructor-provided OpenAPI acceptance suite or security/performance tests have passed. The matching `sec450-test-results.json` can be retained as submission evidence.
+The verified own-service HTTP suite reports **41 passes and five explicit gap
+skips**, with four control checks covering report readiness, run/report
+agreement, repeat-run rejection and immutable retrieval. This result does not
+establish complete bidirectional contract coverage. Keep individual run reports
+and operational details in private release evidence.
 
-**Cross-team manual checks:** Team 102 reported **4/4** successful checks against this service (connectivity, create, list, retrieve) on October 18, 2026. Team 105's initial six queries against Team 102's separate read-only API yielded one successful health check and five authenticated calls blocked by `401` (no valid test credentials); those protected functions were therefore not verified. Neither result proves complete bidirectional contract coverage.
-
-When documenting testing for grading, include the exact deployed commit, test timestamp, pass/fail counts, available CI-run link, and known gaps. Do not represent HTTP availability checks as full functional tests.
+When recording test evidence, identify the tested commit, actual outcomes,
+relevant CI checks and known gaps. HTTP availability alone is not a full
+functional check.
 
 ## Requirements traceability
 
@@ -308,5 +312,4 @@ docs/                         Behavior, contract audit, implementation status
 README.md                     This documentation
 ```
 
-**Team:** SEC450 Indy, Pod C, Team 105  
 **Scope:** Educational prototype for incident management, evidence handling, and SEC disclosure support.

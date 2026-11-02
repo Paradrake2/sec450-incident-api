@@ -1,6 +1,6 @@
 flowchart TB
     caller["Product API caller"] --> root["Product facade at /\nExisting incident routes and docs"]
-    runner["Course caller / teammate runner"] --> system["Isolated system at /system\n/test/setup and /test/report"]
+    runner["External test runner"] --> system["Isolated system at /system\n/test/setup and /test/report"]
     runner --> tester["Configured tester at /tester\n/test/setup, /test/run, /test/report"]
     system --> registry["SystemSessionRegistry\nRetained stores; optional session header"]
     registry --> scoped["One generated PostgreSQL schema per session\nLocal mode can use disposable SQLite"]
