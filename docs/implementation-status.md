@@ -1,467 +1,98 @@
-# Implementation status and decisions
+# Implementation status
 
-Updated November 1, 2026. This log records repository work separately from the proposed roadmap in `SEC_Project_Codex_Implementation_Plan.md`.
+The Phase 4 delivery is merged and deployed at release `8f6ce364`. It combines the incident API, an isolated course system, and a configured HTTP test runner. The deployed self-test returned **41 passed, 5 skipped, 0 failed or errored**, with **4/4 control checks passing**. Cross-team testing in both directions remains incomplete.
 
-## Current Phase 4 release candidate — November 1
+This document describes implemented capabilities and their limits. The [delivery runbook](phase4-delivery.md), [test and acceptance mapping](phase4-test-mapping.md), and [system models](system-models.md) provide operational and design details.
 
-`phase4/contract-conformance` now contains a configured delivery entry point,
-an isolated course system, real HTTP incident tests, an acceptance evidence
-client, candidate fixtures and current models. This is implemented and locally
-verified; deployment/cross-team completion is still pending. Earlier sections
-below are checkpoint history, including statements about then-missing features.
+## Capability status
 
-- `delivery_app:create_app --factory` preserves the root product API and mounts
-  isolated system `/system` and configured tester `/tester`. The public factory
-  requires explicit course PostgreSQL settings; the loopback factory can use
-  disposable SQLite. Startup opens the normal facade and course registry
-  lifespans explicitly; the isolated facade never runs normal-store startup.
-- Each system session owns a temporary store/generated PostgreSQL schema with
-  no public fallback. Setup seeds the versioned Team 105 candidate profile;
-  isolated reset restores it transactionally. Trusted request state selects
-  the engine and seed. Normal product records remain unchanged by course runs.
-- The optional session header selects retained stores; headerless suites use
-  the latest prepared session and must run serially. One active request per
-  session prevents overlapping mutations. Response completion now occurs only
-  after dependency cleanup and lease release, including bodyless responses and
-  Content-Length streams. This fixed intermittent busy409 responses found by
-  real TCP/PostgreSQL testing but missed by earlier in-process checks.
-- `HttpTargetGateway` enforces exact target bases, public DNS/address checks at
-  connection time, original TLS hostname, no redirects/proxy inheritance,
-  deadlines and response bounds. Credentials from the source importer are not
-  forwarded. Local mode explicitly permits only approved loopback literals.
-- The ordered incident suite has46 results:41 executable checks and5 explicit
-  gaps. All9 operations are represented. Project writes require the exact own
-  isolated base and a successful reset; the Team102 read-only feed is not reset.
-  Classification/reset agreement, CLOSED, server-failure injection and legal
-  draft quality remain qualified gaps, not passing checks.
-- System and tester registries each retain32 sessions; full capacity rejects
-  new setup without evicting reports. Run one worker/instance. Reports and IDs
-  disappear after restart; crash orphan cleanup is an operator responsibility.
-  Code/component/system coverage stays unknown with explanatory bases.
-- `course_acceptance` records real control/report exchanges and counts. The
-  configured runbook, AC/oracle inventory and current models are in
-  [phase4-delivery.md](phase4-delivery.md), [phase4-test-mapping.md](phase4-test-mapping.md)
-  and [system-models.md](system-models.md). `render.yaml` proposes the composed
-  startup and explicit course schema settings; actual hosting configuration
-  and deployed SHA remain to be checked.
+| Capability | Implemented behavior | Requirements / implementation |
+| --- | --- | --- |
+| Incident intake and storage | Creates an incident in `RECEIVED`, preserves submitted fields, and normalizes occurrence instants to UTC. | REQ-01, REQ-04, REQ-08; `main.py`, `request_models.py` |
+| Retrieval and filtering | Lists incidents, filters by state, and retrieves an incident with its assessment, review, and related IDs. | REQ-02, REQ-04; `main.py` |
+| Advisory assessment | Deterministic screening of plain-text logs. Positive flags enter `POTENTIALLY_MATERIAL`; negative flags enter `UNDER_REVIEW`. Assessment alone cannot confirm materiality. | REQ-03, REQ-04; `triage.py`, `main.assess` |
+| Human review and history | Accepted decisions update state and append a review record in one transaction. A later material decision can escalate `NOT_MATERIAL`; material downgrades and invalid repeated decisions are rejected. Reviewer identity is submitted text, not verified identity. | REQ-04, REQ-05; `main.review`, `incident_reviews` |
+| Related incidents | Stores each undirected pair once; retrieval is symmetric. Linking does not change assessment or review state. Self-links, duplicates, missing incidents, and closed-state writes are rejected. | REQ-06, REQ-08; `incident_relations` |
+| Disclosure drafts | Requires a stored human `MATERIAL` review. Each draft is retained as a separate version with `final: false`. No filing is performed. | REQ-05, REQ-07, REQ-08; `disclosure_templates.py`, `disclosure_drafts` |
+| Reset | Product-root reset deletes incident, review, relation, and draft records. Isolated-system reset also restores candidate fixtures in the selected store. Shared fixture agreement remains open. | REQ-08; `main.reset`, `course_fixtures.py` |
+| Course system | Deployed. Setup creates isolated storage and seeds candidate fixtures before publishing the session. Reports explicitly mark unavailable code coverage as unknown. | T-01; `course_system.py`, `system_sessions.py` |
+| Automated HTTP runner | Deployed. Supports target setup, one run per session, classified results, and immutable completed or aborted reports. | T-02, T-03; `tester_app.py`, `tester_core.py`, `tester_http.py`, `incident_suite.py` |
+| Source-report preservation | Operator-only importer preserves source snapshots and retrieval observations separately from incident state. Automatic report-to-incident mapping remains unimplemented. | `report_import_store.py`; [import and migration guide](team102-api-import.md) |
 
-Validation at this checkpoint: full isolated PostgreSQL suite **965 passed**
-(29.61s), full SQLite suite **961 passed,4 PostgreSQL-only skips** (21.32s);
-a real loopback HTTP/PostgreSQL run **41 passed,5 skipped,0 failed/error**,
-with4/4 control checks passing. The local historical-contract audit now reports
-**44 passed,0 failed/error**. All62 Python syntax targets, configured Ruff,
-dependency consistency and whitespace checks passed. These are local engineering
-results, not deployed acceptance, runtime coverage or bidirectional conformance.
-
-The earlier API-import/testing-foundation PR8 is now merged on `main` at
-`824d73a91e58102d31b28758644fa1872a84b177`. No merge or deployment was performed
-by this release-candidate implementation. The remaining minimum finish line is
-review/release configuration, exact-SHA deployment, own and both cross-team
-reports, pod scope/fixture decisions, verified registry values and submission
-assembly. Runtime AI, verified reviewer access, deadline automation and product
-UI remain outside this increment.
-
-## Baseline and scope
-
-- Starting branch: `main`; clean working tree.
-- Starting commit: `705dd115c174f7c64f317567364429d5c930694e`, matching the plan's pinned review.
-- Foundation branch: `phase4/database-foundation`; current API-import branch: `phase4/api-report-import`.
-- No repository or ancestor `AGENTS.md` was found in the inspected ancestry.
-- First implementation slice: B-01 baseline/specification reconciliation and B-02 consistent database access. Later course testing, product UI, evidence, AI, and deadline work remain separate tickets.
-- The architecture image describes product intent: preserve evidence, support advisory analysis and human decisions, prepare non-final drafts, and record history throughout. It does not establish implemented external integrations or authorize automatic filing.
-
-The implementation plan, architecture image, repository source, original ten-page instructor **Cross-team Testing Interface** PDF, and teammate handoff were independently read for this slice. The user also supplied [the linked instructor document](https://docs.google.com/document/d/1GhEVTw3a2tNJY2arfDyWgWS94kVYfgC7/edit), retrieved through connected Drive as `student-facing-spec.docx` (Word document; last modified `2026-10-19T14:57:46.729Z`). It contains the same course-wide testing protocol. It is not the missing pod-specific incident API contract. Its embedded OpenAPI starter declares `3.1.1` and `info.version: 0.4.2`; these values do not establish a version for the entire instructor document.
-
-The original instructor sources confirm separate logical system/tester interfaces, safe session preparation, one suite run per tester session, immutable completed/aborted reports, result-level error sources, and honest coverage counts. They permit serialized sessions and documented authentication. They do not define this pod's incident fixtures, session-correlation mechanism, component/AC inventories, cleanup policy, or project-call limits. The latest pod-shared project contract remains required for those choices.
-
-## Completion and validation
-
-| Ticket | Status | Changed areas | Validation evidence | Remaining decisions |
-| --- | --- | --- | --- | --- |
-| B-01 | Local baseline and source reconciliation complete; pod-specific decisions open | README and contract-audit corrections; actual root-level Python syntax targets in CI; this decision log | Before implementation: `69 passed`, 3 deprecation warnings, 5.36s; configured Ruff selection passed | Current pod contract |
-| B-02 | Complete locally; ready for review | Request-scoped database/session selection; explicit-store initialization/backfills; seven isolated-store regressions in `test_database.py` | `76 passed`, 3 baseline deprecation warnings, 5.81s; syntax, configured Ruff, dependency check, and exact OpenAPI comparison passed | Session routing/storage policy for T-01 |
-
-This validated B-01/B-02 checkpoint was committed through the user's connected
-GitHub account, `Krish9Patel`, as
-[`e0cfc80e6076279f8543ec8780f122fe16ceed01`](https://github.com/Paradrake2/sec450-incident-api/commit/e0cfc80e6076279f8543ec8780f122fe16ceed01)
-on the branch now named `phase4/database-foundation` for incremental review. No schema migration,
-merge, or deployment was performed. The Render deployment SHA and live
-PostgreSQL behavior were not verified by this initial foundation slice.
-
-The baseline ran in the workspace `.venv` with Python 3.12.6, FastAPI 0.162.0, SQLAlchemy 2.1.6, pytest 9.2.0, HTTPX 0.28.1, and Ruff 0.17.3. CI uses Python 3.11. The configured static command is `python -m ruff check --select E4,E7,E9,F63,F7,F82 .`.
-
-After publishing the foundation checkpoint, both push-triggered workflows
-completed successfully for `e0cfc80`: [API tests](https://github.com/Paradrake2/sec450-incident-api/actions/runs/41205562580)
-and [API Tests and Static Checks](https://github.com/Paradrake2/sec450-incident-api/actions/runs/41205562499).
-These runs precede the PostgreSQL milestone below.
-
-Final local validation:
-
-- Full pytest suite: **76 passed**, 3 pre-existing deprecation warnings, 5.81s, using isolated synthetic SQLite stores.
-- Syntax compilation: all 11 root-level Python files passed.
-- Configured Ruff selection, `pip check`, and `git diff --check`: passed.
-- Generated OpenAPI: deep equality with the starting commit's schema, obtained by executing its `main.py` in a separate module. Injected dependencies add no request parameters or wire-schema changes.
-- Seven new regressions verify an alternate store's full workflow/history/reset preserves every normal-store table snapshot; cross-store IDs return `404` for retrieval, histories, writes, and links; startup creates only the selected schema; matching-ID legacy backfills stay scoped and idempotent; concurrent resolver overrides route two prepared stores without changing global engines; flushed incident/review changes roll back on failure and request sessions release connections; and dependencies stay out of the wire schema.
+The historical common interface remains OpenAPI **3.1.0**, contract version **1.0.0**, preserved independently in [the versioned contract](../contracts/phase2-v1.0.0.openapi.json). All nine common operations remain in the test inventory. Review and disclosure history routes are implementation extensions, not additional common operations.
 
 ## Database access seam
 
-The B-02 change introduces request-scoped access while preserving `main:app` and existing `main.engine` imports:
+Database-backed routes obtain a request-scoped SQLAlchemy session through `main.get_engine` and `main.get_session`. Product requests select the configured application engine. Isolated course requests receive a server-owned engine and fixture callback through trusted request state; request parameters cannot select a database. Invalid or unprepared course contexts never fall back to product storage.
 
-- `main.get_engine(request)` selects `request.app.state.database_engine`, initialized to `main.engine` when the application is created.
-- `main.get_session`, injected through `Depends(get_engine)`, opens a fresh SQLAlchemy session for the request and closes it on completion. Existing routes retain their explicit transaction commits; uncommitted work rolls back when the session closes.
-- `main.initialize_database(database_engine)` creates tables and runs both legacy backfills against that explicit engine. Backfill functions accept an optional engine while retaining their existing no-argument calls.
-- Incident CRUD, assessments, reviews/history, links, disclosures/history, and reset all use the injected session.
+`main.initialize_database(engine)` creates the four incident tables and runs legacy review and relationship backfills against that explicit engine. Configure the application engine before entering its lifespan when startup must use an alternate store. A request dependency override does not redirect startup or initialize its selected store automatically. Uncommitted changes roll back when a request session closes; routes commit accepted mutations before returning success.
 
-Configure `app.state.database_engine` before entering the application lifespan when startup and requests should use an alternate store. A FastAPI dependency override affects request handling; it does not redirect startup automatically. An override selecting another engine must explicitly initialize that store, or configure the application store before startup. This distinction prevents backfills from silently targeting a different database from the intended store.
+PostgreSQL is supported for application and course storage. Disposable SQLite remains available for development and regression tests. Conditional assessment and review updates reject competing stale transitions with `409`; a successful review and its history append remain atomic. Timezone-bearing occurrence instants are normalized before persistence so SQLite and PostgreSQL preserve the same instant.
 
-This seam does not introduce a test-session header, a session registry,
-authentication, or course-session cleanup. Those remain later work. Startup
-still uses `create_all` and legacy backfills. PostgreSQL validation and
-competing-state protection are recorded in the milestone below; managed
-migrations remain F-01 work.
+Managed migrations support fresh databases and validated adoption of the legacy incident schema. Partial or drifted schemas are refused rather than silently adopted. Source snapshot and observation tables are migration-owned metadata and are not created by incident API startup. Existing SQLite data is not automatically migrated into PostgreSQL. Database readiness, recovery verification, and broader operational hardening remain incomplete F-01 work; the health route is not a database-readiness probe.
 
-## PostgreSQL milestone - October 31, 2026
+## Isolated system and tester composition
 
-F-01 is **partially implemented**: PostgreSQL development/test configuration,
-isolated regression stores, conditional state updates, and timezone handling
-are complete locally. Managed schema migrations, database readiness, broader
-configuration validation, and recovery verification remain outstanding.
+`delivery_app:create_app --factory` preserves the product API at `/api/v1`, mounts the isolated system at `/system`, and mounts the configured tester at `/tester`. The [runbook](phase4-delivery.md) describes startup and configuration. The standalone `main:app` remains a separate product entry point with an unconfigured tester foundation. `tester_demo` is a synthetic lifecycle demonstration and does not test incident operations.
 
-The user supplied
-[`https://sec450-incident-api.onrender.com/openapi.json`](https://sec450-incident-api.onrender.com/openapi.json).
-It was fetched and its full generated schema matched the repository schema at
-comparison time. It describes the deployed incident API, including history
-extensions, with OpenAPI `3.1.0` and application version `1.0.0`. It has no root
-`/test/setup` or `/test/report` paths. It does not establish shared pod fixtures,
-session routing, cleanup, coverage inventories, or project-call limits. The
-deployed SHA was not inferred from schema equality.
+Each course session owns a generated PostgreSQL schema with no `public` search-path fallback, or a disposable SQLite store in explicit local mode. Public startup requires `COURSE_TEST_DATABASE_URL`. Use of the same physical database as product storage requires an explicit configuration opt-in; this does not establish a shared database with another service. Graceful shutdown cleans up only owned generated stores. Abrupt termination can leave orphaned schemas requiring operator review.
 
-Delivered in this slice:
+The optional `X-Test-Session-Id` selects a retained system session. Headerless requests use the latest prepared session and require serialized suites. One incident request per session is allowed at a time; setup is rejected while an incident request is active. Response completion waits for dependency cleanup and lease release, including bodyless and content-length streaming responses. Product data remains outside course resets and runs.
 
-- A separate native PostgreSQL 17.4 cluster under ignored
-  `.venv/postgres/data`, bound to `127.0.0.1:55432`. Application database
-  `sec450` and test database `sec450_test` use separate non-superuser roles.
-  Generated credentials are confined to ignored local files. No existing
-  database or SQLite evidence was migrated or modified.
-- Compose development configuration and `.env.example`, with a separate
-  PostgreSQL test database. Uvicorn can load the ignored `.env` file; SQLite
-  remains an explicit fallback/quick-test path.
-- A PostgreSQL 17 CI job alongside SQLite/static checks. `TEST_DATABASE_URL`
-  selects only an explicitly named loopback test database. Each regression
-  store gets a generated schema, restricted search path, and scoped cleanup;
-  tests never derive a destination from application `DATABASE_URL`.
-- Conditional assessment/review updates reject competing stale state changes
-  with `409`. A review's state change and history remain one transaction.
-  Deterministic competing-request tests exercise real PostgreSQL transactions.
-- Occurrence timestamps normalize to UTC before persistence, and public
-  timestamp serialization normalizes to UTC. Offset and naive-time regressions cover a
-  SQLite/PostgreSQL difference that previously lost the supplied instant on
-  SQLite. Legacy review history normalizes parsed times without overwriting
-  the original JSON snapshot. Naive times retain the existing UTC interpretation.
+System and tester registries each retain at most 32 sessions without eviction. A full registry rejects setup with `503`. Run one worker and one service instance. Sessions and reports are process-local and do not survive a restart. Configured setup, suite, and individual gateway deadlines bound work; these are operational limits, not measured hosting guarantees.
 
-Validation on Python 3.12.6:
+The gateway permits exact configured target bases, checks DNS and network addresses at connection time, connects to a validated address, and preserves the original TLS hostname. It rejects redirects, limits response size, and does not inherit proxy settings or forward source-import credentials. Local mode permits only explicitly approved loopback literals. Every project mutation requires both the exact configured isolated own-system base and a successful reset. Transport approval alone does not permit resetting a peer service.
 
-| Backend/check | Actual local result |
+## Request-contract alignment
+
+Six observed request differences were corrected without changing contract version `1.0.0`:
+
+| Constraint | Implemented behavior |
 | --- | --- |
-| PostgreSQL 17.4 full suite | **97 passed**, 3 existing dependency deprecation warnings, 14.10s |
-| SQLite full suite | **95 passed, 2 PostgreSQL-only tests skipped**, 3 existing warnings, 12.75s |
-| Compose configuration | `docker compose --env-file .env.example config --quiet` passed; containers were not started |
-| Static/dependency checks | All 15 root Python files compiled; configured Ruff, `pip check`, and whitespace checks passed |
-| Application and cleanup smoke checks | Local app uses PostgreSQL as a non-superuser; health/retrieval passed; no generated test schemas or public-schema test tables remained |
+| Optional create `source` | Omission is accepted; explicit `null` is rejected. |
+| Optional review `rationale` | Omission is accepted; explicit `null` is rejected. |
+| Occurrence format | `occurredAt` requires a timezone-bearing RFC 3339 string. Numeric epochs, date-only values, and naive date-times are rejected. |
+| Related-body extensions | Additional properties are accepted and ignored without becoming incident data. |
+| Review validation order | Primary incident lookup precedes field validation of an already decoded body. |
+| Related validation order | Primary incident lookup precedes decoded-body field validation and uses the same selected request session as the handler. |
 
-These results do not establish a new GitHub CI run, a live Render PostgreSQL
-test, a migration of existing records, or a shared company-data integration.
-The PostgreSQL implementation and company-data design are separate incremental
-checkpoints. The PostgreSQL implementation is commit
-[`fceb9da9cd4bac8e420b788ea81b0df57e623cce`](https://github.com/Paradrake2/sec450-incident-api/commit/fceb9da9cd4bac8e420b788ea81b0df57e623cce).
-The supplied Team 102 Query API document describes read-only
-authenticated reports, not shared database access. A public health read at
-`https://seclog.redinbo.win/health` returned HTTP 530 during this session;
-authenticated endpoints were not exercised.
+Nullable response fields remain nullable. Create and review bodies reject additional properties. Media checks run before the affected operation's lookup; malformed JSON remains an envelope-syntax `400` before dependency resolution. Related-target lookup follows valid body fields and returns `404` when the target is absent. These distinctions are documented in [the request model](system-models.md#request-and-validation-model) and checked at model, dependency, and HTTP boundaries.
 
-## Decisions and open questions
+## Source integration boundary
 
-| Topic | Working decision or missing evidence | Needed by |
+The source service exposes a read-only logs/report interface. Its observed report envelope uses a numeric `report_id` and nested object `body`; it is not interchangeable with `IncidentResponse`. A single observed response establishes that sample's shape, not full source-contract conformance. The bounded `team102_probe` command can inspect reports or logs without importing them or selecting an application database.
+
+The importer retains the first raw representation of each semantic source version, deduplicates matching content for a source identifier, and records each retrieval as an observation. Changed content creates a new snapshot. Snapshot and observation writes are transactional; synthetic fixtures use a separate source namespace. Imports cannot modify incident, review, relation, or draft state.
+
+There is no public import endpoint, automatic polling, or automatic incident creation. A peer-side optional push adapter and any future pull mapper require agreed ownership and deduplication rules before activation. Report preservation, incident intake, and course cross-testing are separate integration concerns. Shared company-data PostgreSQL remains a design option, not an established inter-service arrangement. See [the company-data design](company-data-design.md).
+
+## Validation evidence
+
+| Evidence | Verified result | Scope and limitation |
 | --- | --- | --- |
-| Shared API | Preserve existing `/api/v1` JSON, statuses, enums, deterministic assessment, and human review rules. Obtain the current pod contract with an identifiable version/date before definitive conformance claims. | B-01 reconciliation; T-01–03 oracles |
-| Validation precedence | Missing incident plus invalid body: current `404`/`400` precedence must be compared with the pod contract. | Shared contract changes |
-| Extra fields | Existing request schemas forbid extra fields. Pod agreement for acceptance/ignore/rejection remains unverified. | Shared contract changes |
-| AC-03 labels | Local deterministic fixtures do not establish shared human materiality labels. | T-03 outbound suite |
-| Setup/reset fixtures | Existing `/api/v1/test/reset` deletes data; it does not prepare an isolated session or restore an agreed fixture set. Never use the shared deployed reset for local work. | T-01 |
-| Session isolation | Explicit store selection is implemented and locally tested. Routing header, accepted session lifecycle, concurrency/serialization, retention, restart behavior, and cleanup need a documented pod policy. A header alone does not isolate data. | T-01 |
-| Coverage | Component/AC inventories and definitions of exercise are missing. Unavailable measures must be reported honestly rather than as fabricated counts. | T-01–03 |
-| Timing/access | Confirm setup/run/project time limits, retry rules, approved target URLs, and staff/podmate access. Do not assume Team 102's separate query API implements this incident API. | T-02–03 registration |
-| Closure | `CLOSED` exists without a close route. Do not infer or introduce shared closure semantics. | W-01 |
-| Authentication | User chose application accounts with administrator-approved roles. Current API/reviewer strings remain unauthenticated; implement a protected product data boundary before real use. | F-02 |
-| Company data | Use Team 102's read-only Query API with application-owned PostgreSQL storage. Shared PostgreSQL is deferred. Confirm the detail-response schema, source IDs/corrections, and incident mapping before live automatic integration. | API ingestion/evidence work |
-| Hosting | Keep existing Render configuration; AWS remains deferred. Shared service merge/deployment review is a separate step. | Future release |
+| Full PostgreSQL regression suite | **965 passed** | Isolated regression stores; includes API, state, history, persistence, concurrency, protocol, transport, migration, and composition checks. |
+| Full SQLite regression suite | **961 passed, 4 PostgreSQL-only skips** | Local regression result; skipped backend-specific checks are not passes. |
+| Local historical-contract audit | **44 passed, 0 failed or errored** | Real local routes checked against the preserved contract; unresolved fixture and failure-injection claims remain qualified. |
+| Real local HTTP/PostgreSQL self-test | **41 passed, 5 skipped; 4/4 control checks passed** | Exercises the composed system over TCP, including setup, run, report retention, and rerun rejection. |
+| Deployed HTTP self-test at `8f6ce364` | **41 passed, 5 skipped; 4/4 control checks passed** | Verifies the deployed own-system route and tester composition; does not establish bidirectional cross-team conformance. |
+| Static and dependency checks | Passed | Python syntax, configured Ruff rules, dependency consistency, and whitespace checks. |
 
-## Next review stages
+Use `python -m pytest -q` for regressions, `python -m contract_audit --format markdown` for the local operation audit, and `python -m course_acceptance` for deployed control and suite evidence. Backend setup and acceptance options are described in the [PostgreSQL guide](postgresql.md) and [delivery runbook](phase4-delivery.md). Keep each result associated with its tested release and backend; do not combine pytest counts with HTTP case counts.
 
-1. T-01 through T-03: finish isolated system setup/report, connect the tester
-   lifecycle to a real approved transport, and implement the agreed outbound
-   project suite. Testing is the current priority. Confirm session routing,
-   fixtures, coverage, retention, access, and timing with the pod.
-2. F-02: implement application accounts and administrator-approved roles, with
-   contributor/reviewer/administrator permissions and a protected data boundary.
-   Review authority must come from authenticated identity rather than a
-   submitted name.
-3. Evidence and analysis schema: agree the company-data ingestion envelope,
-   preserve evidence/revisions and supported facts, then add advisory summary
-   and analysis records. AI remains advisory and must not record a human
-   determination. See [the working design](company-data-design.md).
-The instructor protocol is checked; the deployed OpenAPI is a current API
-description, not the missing pod session/fixture rules. W-01 follows these
-testing and product foundations.
+The HTTP suite contains **46 results: 41 executable checks and five explicit gaps**. The skipped checks cover pod-approved reset fixtures, shared classification labels, reachability of `CLOSED`, unexpected server-failure injection, and disclosure content quality. Synthetic screening labels and candidate fixture restoration do not resolve shared agreement. A controlled local `500` test does not establish every declared `500` path or health `503` behavior.
 
-Managed migrations should precede new persistent product schemas. Keep each
-stage as a validated commit/review checkpoint, preserving the existing shared
-API and separating merge/deployment from local implementation.
+Code, component, and system coverage counts remain `null` with explanatory bases where instrumentation or agreed inventories are absent. Passing cases, operation counts, and successful controls must not be presented as those coverage measures. The [acceptance mapping](phase4-test-mapping.md) identifies concrete oracles and regression anchors.
 
-## Tester protocol foundation - October 31, 2026
+## Remaining delivery and product work
 
-Implemented shared control/report models, offline exact approved-target
-admission, and a process-local tester coordinator with injected adapters. The
-main application mounts its independent HTTP controls and OpenAPI at
-`/tester`. The default instance has no target gateway, cases, or approved URLs;
-setup fails closed before any outbound request or ready-session creation.
+| Area | Outstanding work |
+| --- | --- |
+| Cross-team evidence | Execute and retain our tester-to-peer and peer-tester-to-our-system reports. Resolve or disclose mismatches and skipped cases; peer self-tests do not substitute for either direction. |
+| Pod contract and fixtures | Confirm current shared scope, versioned fixtures and screening labels, session correlation, coverage inventories, access, and timing expectations. The historical incident API and peer logs/report interface currently differ. |
+| Course artifacts | Verify registry system/tester values against the deployed service and assemble submission evidence for the identified release. |
+| Reviewer access — F-02 | Implement application accounts, administrator-approved roles, and contributor/reviewer/administrator enforcement. Submitted reviewer text currently grants no verified authority. |
+| Evidence and analysis | Agree the source-to-incident envelope, correction/version semantics, deduplication, and supported-fact schema before automatic mapping. Runtime AI extraction and evaluation remain unimplemented; future analysis must remain advisory. |
+| Workflow — W-01 | Define and implement deadline handling and closure semantics. `CLOSED` is accepted as a legacy state/filter but has no public transition. |
+| Product quality | Build the review interface and disclosure editing/review workflow, and complete recovery and operational verification before non-synthetic use. |
 
-Mock-target tests exercise the successful setup/run/report flow, error-source
-propagation, concurrent one-run claims, immutable completed/aborted snapshots,
-coverage validation, partial reports, timeout/cancellation recovery, and
-rejection of invalid adapter results. Cancellation before any case is invoked
-records only skipped cases. Component and system coverage remain null/null
-with pending-inventory explanations.
-
-This is partial T-02 work and a shared schema foundation for T-01. Root system
-setup/report, system session storage/routing, real HTTP transport, the pod
-project suite/oracles, inventory mappings, registration, and cross-team runs
-remain pending. Offline URL admission does not resolve DNS or establish live
-network safety. In-memory sessions require a single process and are lost on
-restart. The internal timeout defaults are not registered Render time limits.
-
-The parent incident OpenAPI was compared deeply with the preceding checkpoint
-and is unchanged. See [cross-team testing implementation notes](cross-team-testing.md)
-for exact adapter boundaries, configuration limits, and validation details.
-
-Final local validation: **385 passed** on PostgreSQL 17.4 (7.47s); **383 passed,
-2 PostgreSQL-only skips** on SQLite (7.53s). Both runs retained three existing
-dependency deprecation warnings. The configured Ruff selection, syntax checks
-for all 24 root Python files, and whitespace checks passed. These are regression
-and mock-target results, not real outbound project-suite or deployment evidence.
-
-## API report-preservation checkpoint - October 31, 2026
-
-The selected integration now uses Team 102's existing read-only Query API;
-shared PostgreSQL remains deferred. This work is separate from the course
-testing controls and is recorded on `phase4/api-report-import`.
-
-Implemented a fixed-origin HTTPS report client, an explicit one-report import
-CLI, and private immutable snapshot/observation storage. Semantic JSON digests
-deduplicate repeated content for a source ID, while changed content creates a
-new snapshot and each retrieval creates an observation. Fixtures have a
-separate source namespace. Imports cannot alter incident/review/draft state.
-
-Alembic revisions freeze the four legacy tables and add the two private source
-tables. Explicit migration validates complete legacy schema topology before
-adoption; partial/drifted stores are refused. Fresh/adopted upgrade rollback,
-data preservation, import-table downgrade, and migration/model parity are
-tested. The subtype review found and fixed acceptance of CHAR as VARCHAR and
-CITEXT as TEXT. New report tables are not created by legacy application startup.
-
-Final local validation: **536 passed** on PostgreSQL 17.4 (24.38s); **533 passed,
-3 PostgreSQL-only skips** on SQLite (13.32s), with three existing warnings per
-run. Ruff, dependency validation, whitespace checks, and syntax for all 37
-Python files including revisions passed. A validated local PostgreSQL database
-was upgraded and the committed synthetic fixture imported twice: one snapshot,
-two observations, and unchanged incident row count. No Render migration or live
-source request occurred.
-
-The user asked whether our deployed incident schema also describes Team 102's
-reports. A fresh read of our OpenAPI confirmed `CreateIncident` requires title,
-log, and occurredAt; `IncidentResponse` adds string ID, state, assessment,
-review, and related IDs. The supplied Query API guide instead describes numeric
-report_id and a nested body. Team 102's public `/openapi.json` returned HTTP 530
-when checked. These may be different interfaces; identical live schemas have
-not been established. The minimal source parser remains isolated/provisional,
-and a sanitized source example has been requested. No automatic field mapping,
-incident creation, polling/cursor, or live compatibility claim is supplied.
-
-See [manual API import and migration notes](team102-api-import.md).
-
-## Read-only source schema probe - October 31, 2026
-
-The teammate expects Team 102's report GET to match our incident response.
-Added `python -m team102_probe` to test that expectation against one detail
-response, without imposing the importer's provisional envelope. It discovers
-one identifier using a bounded list GET, or accepts an explicit numeric/opaque
-identifier for one detail GET. There is no database access, import, or polling.
-
-The probe checks the repository's `IncidentResponse` JSON Schema with strict
-types and date-time formats. It distinguishes root and known-envelope matches
-and separately reports the guide's minimal numeric report_id/object body
-shape. Diagnostics contain known field names/types and sanitized validation
-paths, never report values or unknown property names. A sample match does not
-establish full API conformance. The existing importer still enforces its
-isolated provisional format until actual source compatibility is confirmed.
-
-Validation: **616 passed** on PostgreSQL 17.4 (14.24s); **613 passed, 3
-PostgreSQL-only skips** on SQLite (8.83s), with the three existing warnings.
-This includes 50 new schema-probe cases and 30 additional source-client cases.
-All 39 Python syntax targets, configured Ruff, dependency checks, and whitespace
-checks passed. Running the unconfigured CLI returned its sanitized missing-key
-error before network access. The user confirmed Team 102 has not yet provided
-an API key; live schema verification remains pending. No live report request,
-deployed migration, merge, or deployment was performed.
-
-The user subsequently supplied a Team 102 API credential, stored only in the
-ignored local `.env`. An authenticated probe then completed two read-only GETs
-(list limit=1 and one detail). The detail matched numeric `report_id`/object
-`body`, with no `IncidentResponse` match at the root or inspected body. Known
-body fields included summary, timeline, AI assessment, rule/requester/destination,
-raw lines, integrity, collection gaps, and previous cluster ID. This confirms
-the minimal envelope for that sample, not the full API or body contract.
-Only redacted schema diagnostics were emitted; no payload was retained or
-imported, and no application database or deployed service was modified.
-
-## Log-feed clarification - October 31, 2026
-
-The user supplied a screenshot identifying `/v1/logs`, Bearer authentication,
-and a 60-request/minute limit. That endpoint is absent from the supplied guide,
-which documents reports, clusters, and events. Two authenticated HTTPS checks
-(one original-path request and one `limit=1` request) succeeded. The root has
-query/count/collection_gaps/logs; the first sampled entry matches neither our
-incident schema nor numeric report_id/object body. Known sampled fields include
-string ts/host/source and nullable client_ip/username. No payload was saved or
-imported. An alias relationship with `/v1/events` has not been established.
-
-Added `python -m team102_probe --resource logs` for one bounded HTTPS list GET,
-known-field type diagnostics, and inspection of the first log only. Reports
-remain the default resource; report IDs are rejected in logs mode before HTTP.
-The stated rate limit was not load-tested; there is no polling or automatic
-retry. Source-feed confirmation still does not establish the course system
-controls or pod fixture/session rules.
-
-Full local verification: **627 PostgreSQL passes** (22.51s); **624 SQLite
-passes, 3 PostgreSQL-only skips** (12.77s), with three existing warnings. This
-adds eight probe and three client cases. All 39 Python files compiled; Ruff,
-dependency validation, and whitespace checks passed. No merge or deployment.
-
-## Local tester walkthrough - October 31, 2026
-
-The user requested a readiness review and local run. The mounted tester controls
-are implemented, but normal `main:app` remains unconfigured. System-side root
-setup/report, isolated session fixtures/routing, live target transport, agreed
-project cases, coverage instrumentation/inventories, and cross-team delivery
-are still outstanding. Data-source probes are separate from these controls.
-
-Added `tester_demo.py` as an independent synthetic walkthrough and loopback
-server. Its injected gateway and three DEMO cases contact no target and access
-no application database, `.env`, or API keys. Pass and intentional-failure runs
-return HTTP 200; an intentional abort returns 500 after saving pass/error/skip
-results. All scenarios preserve report snapshots and reject another run with
-409. Coverage remains null/null with explanations. This does not test incident
-operations or establish course/pod conformance.
-
-Local verification: **285 existing protocol tests passed** (1.91s; one existing
-dependency warning); CLI walkthroughs verified all three scenarios. An actual
-loopback HTTP run verified setup 201, pre-run report 409, run 200, report 200,
-repeat run 409, and unchanged report 200. All 40 Python files compiled; configured
-Ruff and whitespace checks passed. Synthetic results are in the excluded local
-team folder. No production/deployed target, database, merge, or deployment was
-used. The optional server binds only 127.0.0.1:8001 with one process and loses
-sessions on restart.
-
-## Recovered Phase 2 contract and real operation audit - October 31, 2026
-
-The four supplied phase PDFs were reviewed as reference evidence, separating
-assignment prompts, submitted designs, reported historical results, and fresh
-observations. Phase2_Gradescope Section 5.1 supplies the original nine-operation
-OpenAPI 3.1.0 / version 1.0.0 contract. This resolves the missing historical
-baseline noted earlier; current pod agreement and deployed conformance remain
-unverified. Phase 3 also supplies historical test evidence and validation-order
-claims, not a new bidirectional acceptance result.
-
-Preserved a normalized contract under `contracts/`, without the PDFs, grades,
-or participant information. Independent JSON Schema response checks enforce
-types, dates, constants, internal references, and empty 204 bodies while
-keeping diagnostics free of payload values. The baseline is not regenerated
-from current implementation models and does not silently absorb differences.
-
-Added `python -m contract_audit --format markdown` (JSON by default). It runs
-real incident routes in a disposable local store, includes all nine operations
-and requirement mappings, and reports absent/error checks honestly. It accepts
-no remote URL and does not load application `.env` credentials. Explicit local
-`TEST_DATABASE_URL` selects guarded PostgreSQL schemas; otherwise it uses
-temporary SQLite. Exit 1 indicates observed differences, not a broken auditor.
-
-The first PostgreSQL audit recorded **44 checks: 38 passed, 6 failed**:
-explicit null create-source, timezone-free occurredAt, null review-rationale,
-lookup-before-field-validation for review and related routes, and permitted
-additional properties on related requests. These are recorded, not fixed in
-this checkpoint. Shared-fixture restoration stays partial; unexercised 500/503
-paths stay unverified. The supplied positive assessment example is a separate
-current-heuristic mismatch because the actual shared label package is absent.
-
-Validation: **686 PostgreSQL tests passed** (16.33s); **683 SQLite passes,
-3 PostgreSQL-only skips** (13.54s), with three existing warnings. Fifty schema
-and nine auditor regressions were added; those 59 also passed after formatting.
-All 44 Python syntax targets, configured Ruff, dependency, and whitespace checks
-passed. The new work is isolated on `phase4/contract-conformance`, based on the
-prior API-import/walkthrough checkpoint. No application behavior, deployed
-target, normal database, external message, or filing was changed. PDFs and
-local generated reports remain excluded. See the
-[reconciliation record](phase2-contract-reconciliation.md).
-
-## Team 102 repository and live control discovery - October 31, 2026
-
-At the user's request, searched public GitHub and identified `dredinbo15/SEC450`;
-its testing document explicitly identifies Team 102/Pod C and the known source
-hostname. Reviewed source at `1ef6b270b686ecc845c4946a84514475e01205af` without
-executing it. System and tester bases are now known: `https://seclog.redinbo.win`
-and that origin plus `/tester`. The deployed commit remains unverified.
-
-Direct unauthenticated HTTPS checks confirmed index/health 200, non-destructive
-system setup 201 and a valid system report 200. The peer's own tester, invoked
-against its own system, returned 28 results: 27 pass and one source-IP-filter
-skip due to absent suitable recent data. Run and saved report matched, remained
-stable, and passed our report models. Coverage reported 8/8 peer operations and
-7/30 peer criteria executed, with code null/null. This is not our tester or a
-bidirectional incident-contract acceptance run. No saved API key, remote reset,
-external message, or third-party code execution was used.
-
-Their source exposes a log/query project API and course controls, not our nine
-incident operations; the known host also returned 404 for `/api/v1/health`.
-Their versioned fixtures provide detector-rule labels, not the missing shared
-materiality labels. Their optional push adapter already maps reports to our
-incident POST, disabled by default in example configuration; deployed enablement
-is unknown. Coordinate push/pull ownership and receiver deduplication before
-adding automatic incident creation. The current snapshot importer does not
-create incidents. These discoveries narrow the remaining pod questions to
-project scope, fixtures/labels, and session/coverage rules, rather than unknown
-course-control URLs. See the [source and observation record](team102-repository-review.md).
-
-## Request-contract alignment - November 1, 2026
-
-Corrected the six observed request differences without changing contract
-version 1.0.0 or response nullability. Optional source/rationale may be omitted
-but explicit null is rejected; occurredAt requires an RFC 3339 string and a
-timezone; related requests accept/ignore additional properties. Review and
-related handlers now use prepared dependencies that resolve the incident in
-the selected request session before validating decoded body fields. They reuse
-the cached session and preserve database overrides. FastAPI still treats
-malformed JSON as an envelope-syntax 400 before dependencies run; this boundary
-is documented and tested rather than silently described as a field error.
-
-The real local 44-check audit now has no failed/error checks. Shared fixture
-agreement/restoration, unexercised server-error paths, the historical heuristic
-example and deployed acceptance remain separate limitations.
-
-Checkpoint validation covers the complete previous regression suite plus
-44 model, 17 preparation, and seven HTTP-alignment cases: **754 PostgreSQL
-passes** (25.39s); **751 SQLite passes and three PostgreSQL-only skips**
-(19.03s), with three existing warnings. The older timestamp test now uses an
-explicit UTC timezone; new HTTP tests prove invalid timestamps/null fields do
-not create records or decisions, extra link fields are not persisted, and
-media checks precede missing-ID field errors. System-session and live transport
-modules are being developed separately and are not part of this checkpoint.
+The implemented increment supports synthetic incident handling, advisory screening, recorded human decisions, preserved drafts, and runnable testing. It does not provide verified reviewer authorization, legal materiality determination, automated filing, or production reliability guarantees.

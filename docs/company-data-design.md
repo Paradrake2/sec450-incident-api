@@ -1,6 +1,6 @@
 # Company data, review access, and analysis design
 
-Working design, October 31, 2026. This document proposes the next product data boundary. The tables, access controls, importer, and AI output below are not implemented by documenting them. Preserve the existing `/api/v1` contract while introducing reviewed product extensions.
+This document proposes the next product data boundary. Proposed tables, access controls and AI output are design work until separately implemented. Preserve the existing `/api/v1` contract while introducing reviewed product extensions.
 
 Current decision: use Team 102's read-only Query API and application-owned
 PostgreSQL storage. Shared PostgreSQL is deferred pending a future joint
@@ -8,14 +8,15 @@ agreement. A bounded manual source-report preservation/import slice is now
 implemented; full evidence/incident mapping, product permissions, and AI output
 remain future work. See [API import implementation](team102-api-import.md).
 
-## Evidence and unresolved integration agreement
+## Current boundary and unresolved integration agreement
 
-| Input | What it establishes | What it does not establish |
+| Area | Established behavior or design decision | Remaining work |
 | --- | --- | --- |
-| Current application source | Incident logs, deterministic assessments, submitted reviewer strings, review history, symmetric links, and saved non-final drafts exist. | Authenticated reviewers, evidence revisions, editable draft history, AI extraction, and isolated course sessions do not yet exist. |
-| User's October 31 clarifications | Use the read-only Query API for now and defer the shared PostgreSQL proposal. Keep imported source evidence in our own database. Reviewer access will use application accounts with administrator-approved roles. | Team 102's complete response schema, source correction/version semantics, and cross-team testing contract still need confirmation. |
-| Supplied `SEC450 Query API.md` | Team 102 documents authenticated read-only reports, clusters, events, and integrity checks at `https://seclog.redinbo.win`. Reports include source summaries, timelines, raw log lines, detection rules, upstream AI assessments, and integrity information. | It documents neither PostgreSQL access nor our incident API. A live response/schema and successful authenticated integration have not been verified by this design review. |
-| Architecture drawing | Security tools, tickets, business inputs, and reviewers contribute to one traceable incident workflow. | It does not require every contributor to write the same application tables. |
+| Incident application | Incident logs, deterministic assessments, submitted reviewer strings, review history, symmetric links and saved non-final drafts exist. Isolated course-system sessions provide separate synthetic test storage. | Authenticated product reviewers, evidence revisions, editable draft history and AI extraction remain unimplemented. |
+| Source integration | Read the Query API and preserve imported evidence in application-owned PostgreSQL. Shared PostgreSQL access is deferred. | Confirm the complete response schema, source correction/version semantics and automatic incident mapping. |
+| Review access | The proposed product identity model uses application accounts with administrator-approved roles. | Implement account provisioning, recovery, reviewer approval/revocation and server-side authorization. |
+| Query API | Authenticated read-only reports, clusters, events and integrity checks are exposed at `https://seclog.redinbo.win`. Source reports can contain summaries, timelines, raw log lines, detection rules, AI assessments and integrity information. | Query responses do not establish PostgreSQL access or our incident contract. Minimal response observations do not validate the complete source contract. |
+| Product workflow | Security tools, tickets, business inputs and reviewers contribute to one traceable incident workflow. | Complete the evidence/revision and authorization boundaries without requiring every contributor to write application tables directly. |
 
 The Query API is the selected source adapter. Choose one authoritative delivery
 route for each source event; future alternative routes must share the same
@@ -143,7 +144,7 @@ Authorize every mutation server-side and record the authenticated actor. Use ver
 ## Decisions needed for the next slices
 
 1. Confirm the selected Query API's report-detail response with a synthetic example, stable source identity, and new/corrected report semantics. The manual preservation slice does not establish a complete automatic importer or incident mapping.
-2. Keep shared PostgreSQL deferred. Any later change requires joint schema, role, retention, migration, and operational ownership agreement. Configure API credentials through local/deployment secrets, never chat or Git.
+2. Keep shared PostgreSQL deferred. Any later change requires joint schema, role, retention, migration, and operational ownership agreement. Configure API credentials through local/deployment secrets and keep them out of source control and diagnostic output.
 3. Implement the selected application-account approach with administrator-approved roles. Agree initial administrator provisioning, account recovery, reviewer approval/revocation, and any second-reviewer requirement before protected decisions or draft editing are exposed.
-4. Agree course session routing, fixture/reset/cleanup policy, component/acceptance-criterion inventories, and timing/access notes. Generated Team 105 OpenAPI describes implemented wire shapes; it does not supply those missing pod agreements.
-5. Deliver PostgreSQL validation/migrations first, then an evidence import with receipts/audit, protected human review, and the course interface in small separately reviewed checkpoints. Provider-backed AI follows the evidence/revision and output-schema foundation.
+4. Agree session routing, fixture/reset/cleanup policy, component/acceptance-criterion inventories and timing/access notes for the implemented course interface. Generated OpenAPI describes wire shapes; it does not establish missing integration agreements.
+5. Extend the PostgreSQL migration and report-preservation foundation with evidence revisions, audit events and protected human review in separately reviewed checkpoints. Provider-backed AI follows the evidence/revision and output-schema foundation.

@@ -1,6 +1,6 @@
 # Phase 4 acceptance and test mapping
 
-Updated November 1, 2026. This is a source-level inventory for the Phase 4 delivery candidate, **not a deployed acceptance report**. Requirement IDs and declared statuses come from [the recovered Phase 2 v1.0.0 contract](../contracts/phase2-v1.0.0.openapi.json); the AC mapping follows [the reconciliation record](phase2-contract-reconciliation.md). The instructor's system/tester control protocol is a separate interface.
+This is a source-level inventory for the Phase 4 delivery, **not an individual acceptance report**. Requirement IDs and declared statuses come from [the Phase 2 v1.0.0 contract](../contracts/phase2-v1.0.0.openapi.json); the AC mapping follows [the reconciliation record](phase2-contract-reconciliation.md). The system/tester control protocol is a separate interface.
 
 ## Runners, counts, and evidence boundaries
 
@@ -98,6 +98,6 @@ The historical employee-database access example remains a diagnostic mismatch wi
 - Save a timestamped own deployed run and all-nine-operation status evidence, with actual pass/fail/error/skip totals, tested statuses, untested errors, fixture profile, and limitations. Record code/component/system coverage honestly.
 - Complete and retain **our suite against Team 102** and **Team 102's suite against our deployed system**, including target/runner versions and known interface mismatches. Team 102's earlier self-check is neither cross direction.
 - Confirm pod interface scope/version, fixture/label ownership, session routing/concurrency and access expectations. Do not change the recovered contract or claim interchangeable logs/report and incident APIs without agreement.
-- Update the class registry with verified system and tester bases and runner instructions. Finish the team submission's delivered increment, current models, AC results, unresolved requirements, limitations, coordination record, and required source/GenAI acknowledgments.
+- Update the service registry with verified system and tester bases and runner instructions. Finish the team submission's delivered increment, current models, AC results, unresolved requirements, limitations, coordination record, and required source/GenAI acknowledgments.
 
-Keep sanitized reports separate from raw source evidence and credentials. The local-only team handoff remains outside the repository; this mapping contains only source/test inventory and synthetic fixture references.
+Keep run reports, raw source evidence and credentials outside public documentation. This mapping contains only source/test inventory and synthetic fixture references.

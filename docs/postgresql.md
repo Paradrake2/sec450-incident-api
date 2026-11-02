@@ -52,30 +52,12 @@ database as the test database. The setup does not move records from an existing
 `incidents.db`; leave that file intact. Any future data migration needs its own
 reviewed import and verification step.
 
-### This workspace's native instance
-
-On October 31, 2026, an isolated PostgreSQL 17.4 cluster was initialized under
-the ignored `.venv/postgres/data` directory. It uses `127.0.0.1:55432`, separate
-application/test databases, and separate non-superuser roles. Generated
-connection credentials are saved only in ignored local files, including `.env`.
-Existing PostgreSQL databases and SQLite records were not modified. Preserve
-the cluster directory when rebuilding the Python environment.
-
-Check its status, or restart it after stopping the process or rebooting:
-
-```powershell
-& 'C:\Program Files\PostgreSQL\17\bin\pg_ctl.exe' -D '.venv\postgres\data' status
-# Run start only when this cluster is stopped and port 55432 is available.
-& 'C:\Program Files\PostgreSQL\17\bin\pg_ctl.exe' -D '.venv\postgres\data' -l '.venv\postgres\server.log' -o '-h 127.0.0.1 -p 55432' start
-.\.venv\Scripts\python.exe -m uvicorn main:app --env-file .env --reload
-```
-
-Stop the application before stopping its database. A normal database stop
-preserves the cluster:
-
-```powershell
-& 'C:\Program Files\PostgreSQL\17\bin\pg_ctl.exe' -D '.venv\postgres\data' -m fast stop
-```
+Use the PostgreSQL service manager or `pg_ctl` for the installation's data
+directory to check, start or stop a native cluster. Bind it to loopback and
+verify the chosen port is available before starting. Stop the application
+before stopping its database. Preserve the data directory and keep generated
+credentials in ignored local secrets rather than installation notes in the
+repository.
 
 ## Run PostgreSQL regressions
 
@@ -85,7 +67,7 @@ a dedicated database name ending `_test` or starting `test_`, and no URL query
 options that can reroute the connection. Each disposable store receives a new
 random schema and a schema-specific search path. Cleanup drops only those
 generated schemas, including when a test fails. These are local regression
-stores, separate from the future course testing session interface.
+stores, separate from the course system's retained session stores.
 
 Pytest does not automatically load `.env`. In PowerShell, read just its test URL
 without printing it:
@@ -110,22 +92,17 @@ uses a deployed service or calls a public reset endpoint. See the
 [implementation status](implementation-status.md) for actual local and CI
 validation evidence. Configuration alone does not establish a passing CI run.
 
-Local validation on October 31, 2026 used Python 3.12.6 and PostgreSQL 17.4:
+The PostgreSQL suite checks competing assessment/review requests, isolated
+schema cleanup and timestamp normalization. Public timestamp serialization and
+persistence normalize to UTC; explicit timezone offsets preserve their instant
+on both backends. API occurrence timestamps require an explicit timezone.
+Legacy naive timestamps retain their UTC interpretation without rewriting the
+original legacy JSON snapshot. Database-specific concurrency cases skip on
+SQLite.
 
-- PostgreSQL: **97 passed**, 3 existing dependency deprecation warnings, 14.10s.
-- SQLite: **95 passed, 2 skipped**, the same 3 warnings, 12.75s. The two skipped
-  tests require PostgreSQL to exercise competing transactions.
-- The PostgreSQL suite includes actual competing assessment/review requests,
-  isolated schema cleanup, and offset/naive timestamp regressions. Public timestamp
-  serialization and persistence normalize to UTC; supplied timezone offsets
-  preserve their instant on both backends. Naive occurrence and legacy review
-  times retain the existing interpretation as UTC; original legacy JSON remains
-  unchanged. PostgreSQL validation used a non-UTC server timezone.
-- Compose configuration passed `docker compose --env-file .env.example config
-  --quiet`. Docker containers were not started for this local validation.
-
-These are local results. The added PostgreSQL CI job requires its own recorded
-run before claiming GitHub Actions success.
+Use `docker compose --env-file .env.example config --quiet` to validate Compose
+configuration without starting containers or printing expanded secrets. Record
+actual test/CI outcomes separately from configuration checks.
 
 ## Operational limits
 

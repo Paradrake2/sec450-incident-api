@@ -33,7 +33,7 @@ lifecycle demonstration on port 8001.
 A report before a run returns 409; a second run returns 409. Unknown sessions
 return 404. Setup/case errors carry a classified source. Tester failures freeze
 partial results; report retrieval does not rerun cases. The product's incident
-errors and the instructor control errors remain separate schemas.
+errors and the system control errors remain separate schemas.
 
 ## Local walkthrough
 
@@ -60,7 +60,7 @@ The executable acceptance client performs setup, pre-run report, run, saved
 report, rejected repeat run and immutable report retrieval:
 
 ```powershell
-.\.venv\Scripts\python.exe -m course_acceptance --local --output .team-local/acceptance/local.json
+.\.venv\Scripts\python.exe -m course_acceptance --local --output .venv/test-results/local.json
 ```
 
 It prints counts and saves the schema-checked report. Exit 0 means no observed
@@ -130,7 +130,7 @@ loopback remain rejected.
 After deployment, run our tester against our isolated system:
 
 ```powershell
-python -m course_acceptance --output .team-local/acceptance/deployed-self.json
+python -m course_acceptance --output .venv/test-results/deployed-self.json
 ```
 
 Record `GET https://sec450-incident-api.onrender.com/version` immediately before
@@ -141,8 +141,8 @@ the acceptance report alone does not identify the deployed commit.
 Both cross-team directions can then be recorded with the same client:
 
 ```powershell
-python -m course_acceptance --target-base https://seclog.redinbo.win --output .team-local/acceptance/ours-to-team102.json
-python -m course_acceptance --tester-base https://seclog.redinbo.win/tester --target-base https://sec450-incident-api.onrender.com/system --output .team-local/acceptance/team102-to-ours.json
+python -m course_acceptance --target-base https://seclog.redinbo.win --output .venv/test-results/ours-to-team102.json
+python -m course_acceptance --tester-base https://seclog.redinbo.win/tester --target-base https://sec450-incident-api.onrender.com/system --output .venv/test-results/team102-to-ours.json
 ```
 
 Expect project-operation differences until the pod settles scope: Team 102
@@ -178,7 +178,7 @@ and [environment variable changes](https://render.com/docs/configure-environment
 After release, verify `/version` against the intended commit and hosting logs;
 Render defines [RENDER_GIT_COMMIT](https://render.com/docs/environment-variables)
 as the deployed commit. Capture actual self/cross reports and an operational log
-excerpt, then update/read back the class registry with system base
+excerpt, then update/read back the service registry with system base
 `https://sec450-incident-api.onrender.com/system` and tester base
 `https://sec450-incident-api.onrender.com/tester`. These are proposed registry
 values until the release is verified. Document the fixture status, serial

@@ -7,7 +7,7 @@ public endpoint or automatically create incidents or human decisions.
 
 ## Scope and contract limits
 
-The supplied Query API guide documents authenticated, read-only access to
+The Query API documentation describes authenticated, read-only access to
 `https://seclog.redinbo.win/v1/reports/{id}`. It describes `report_id` and a
 report `body`, but does not provide a complete detail-response example. The
 current isolated parser requires a JSON object with a matching numeric
@@ -16,10 +16,9 @@ live detail sample matched this minimal envelope. The complete body contract,
 identity/correction semantics, and production import behavior remain unverified.
 The importer rejects unsupported shapes rather than guessing.
 
-The teammate expected their report GET to match our `IncidentResponse`. The
-read-only probe checked one live response without applying the importer's
-envelope assumption: its root had `report_id` and `body`, and neither the root
-nor inspected body matched our incident schema. No incident fields were inferred.
+A read-only schema probe found a response with root `report_id` and `body`
+fields. Neither the root nor the inspected body matched `IncidentResponse`.
+The probe does not assume the importer's envelope or infer incident fields.
 
 The importer fetches one explicit ID at a time. There is no background poller,
 list cursor, or completeness guarantee. The guide's 24-hour default/31-day
@@ -41,8 +40,8 @@ date-time validation support:
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 ```
 
-When Team 102 provides access, put `SEC450_KEY` in the project's ignored `.env`
-file or local environment. Do not paste the key into chat or commit it. No
+Configure `SEC450_KEY` in the project's ignored `.env` file or local
+environment. Keep credentials out of source control and diagnostic output. No
 database URL or migration is needed for the probe:
 
 ```powershell
@@ -82,8 +81,8 @@ the entire API, endpoint behavior, error responses, or common contract conforms.
 | `2` | Guide-envelope match only, or an unsupported response shape. |
 | `3` | No source sample was available. |
 
-Synthetic tests cover the probe's validation behavior. On October 31, 2026,
-one authenticated list GET and one detail GET returned a `guide_report` match,
+Synthetic tests cover the probe's validation behavior. A bounded authenticated
+list/detail probe returned a `guide_report` match,
 with no incident-schema matches. Known body fields included summary, timeline,
 ai_assessment, matched_rule, requester, data_destination, raw_lines, integrity,
 collection_gaps, and previous_cluster_id. Only redacted diagnostics were emitted;
@@ -92,9 +91,8 @@ deliberate follow-up work; this sample is not full contract conformance evidence
 
 ### Log-feed probe
 
-The user also supplied `/v1/logs`, which is absent from the supplied Query API
-guide. Although the shared screenshot used an HTTP URL, the authenticated
-HTTPS endpoint responded successfully. One response had a root envelope with
+The authenticated HTTPS `/v1/logs` endpoint uses a separate collection shape.
+A response observation had a root envelope with
 `query`, `count`, `collection_gaps`, and `logs`; its first log entry matched
 neither our `IncidentResponse` nor the report parser's `report_id`/`body` shape.
 This is a distinct source response. No alias or replacement relationship with
@@ -116,10 +114,10 @@ but the sample matches neither incident JSON Schema nor the minimal report
 envelope. That exit does not indicate an authentication or transport failure.
 `--report-id` applies only to report mode and is rejected for logs before any
 request is made. The guide's event field names help label known types; they
-do not establish a schema for this newly supplied logs endpoint.
+do not establish the log endpoint's complete schema.
 
-The screenshot and supplied guide state a limit of 60 requests per minute per
-key. This is a request limit, not the number of logs produced or returned, and
+The integration guidance states a limit of 60 requests per minute per key.
+This is a request limit, not the number of logs produced or returned, and
 was not independently load-tested. The probe does not poll, automatically
 retry, or increase the limit. Rate-limit responses retain bounded Retry-After
 metadata for a later operator-controlled request.
@@ -182,8 +180,8 @@ database credentials, or raw upstream errors. No automatic request retries
 are performed, and a 429 provides bounded `Retry-After` metadata for a later
 operator-controlled retry. Product authentication/access controls are still
 pending; use synthetic data for this prototype until protected operation is
-established. The preservation milestone used synthetic fixtures; the later
-read-only probe fetched one live sample without importing or saving its payload.
+established. Import behavior is tested with synthetic fixtures. Read-only live
+schema observations do not establish production import compatibility.
 
 ## Evidence and retry behavior
 

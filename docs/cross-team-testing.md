@@ -1,215 +1,151 @@
-# Cross-team testing protocol foundation
+# Cross-team testing protocol
 
-**Historical foundation notes:** the configured real system/tester is now
-implemented in `delivery_app.py`. Use [the current Phase 4 runbook](phase4-delivery.md)
-for real incident checks on port 8002, deployment configuration and cross-run
-commands. The unconfigured `main:app` and synthetic port-8001 demo described
-below remain available; they do not describe the configured delivery entry point.
+The configured delivery in [`delivery_app.py`](../delivery_app.py) exposes an
+isolated system at `/system` and an automated incident tester at `/tester`.
+Use [the release runbook](phase4-delivery.md) for startup, target selection and
+cross-service commands. The standalone `main:app` retains an unconfigured tester
+foundation, while `tester_demo` provides a separate synthetic lifecycle demo.
 
-This milestone implements the generic tester control plane. It is partial
-T-02 work, with shared protocol models useful to T-01. It does not establish
-pod project conformance, a deployed tester, or completed cross-team testing.
+## Tester controls
 
-## What exists
-
-The main application mounts an independent FastAPI tester at `/tester`:
-
-| Method and actual path | Behavior |
+| Method and path | Behavior |
 | --- | --- |
-| `POST /tester/test/setup` | Validate a protocol request and, when configured, prepare an approved target with a new session ID. |
-| `POST /tester/test/run` | Atomically claim one ready session, run its configured cases once, and save a suite report. |
-| `GET /tester/test/report?session_id=...` | Return a detached copy of a stored completed/aborted report. |
-| `GET /tester/openapi.json` | Describe the three controls and concrete request, result, coverage, and error models. |
-| `GET /tester/docs` | Interactive API documentation for the tester. |
+| `POST /tester/test/setup` | Validate an approved target and prepare it with a new session ID. |
+| `POST /tester/test/run` | Claim one ready session, execute its configured cases once and save a report. |
+| `GET /tester/test/report?session_id=...` | Return the stored completed/aborted report without rerunning cases. |
+| `GET /tester/openapi.json` | Describe requests, results, coverage and errors. |
+| `GET /tester/docs` | Interactive tester documentation. |
 
-The parent incident API and its error format remain separate. The mounted
-app's operations use `message` and `source` errors. Invalid protocol bodies,
-queries, or POST media types return 400 rather than FastAPI's default 422.
+Control errors use `message` and classified `source` fields, separate from
+incident API error schemas. Invalid control bodies, queries or POST media types
+return `400`. Unknown sessions return `404`; report-before-run and repeated run
+return `409`.
 
-**The default mounted tester is deliberately unconfigured.** It has no gateway,
-project suite, or approved targets. Setup returns 500/source `tester` with a
-configuration explanation before creating a session or making any outbound
-request. An empty suite cannot be configured to produce a misleading passing
-report. Unknown run/report sessions return 404.
-
-This makes the confirmed protocol mechanics inspectable and testable without
-guessing the pod's project operations or enabling an arbitrary URL fetcher.
-There are no live-network adapters or approved target URLs in this milestone.
+An unconfigured `create_tester_app()` has no gateway, cases or approved targets.
+Setup fails before creating a session or making an outbound request. The
+configured delivery supplies those components explicitly; an empty suite cannot
+be used to produce a misleading passing report.
 
 ## Adapter boundaries
 
-`create_tester_app(coordinator, approved_targets=...)` creates a configured app
-only when trusted application code supplies the necessary pieces:
+- `TargetGateway.prepare(target_url, session_id)` prepares a target, requires
+  its `201` response and validates the echoed session ID.
+- `TargetGateway.code_coverage(target_url, session_id)` retrieves a validated
+  code-coverage measure or a classified failure.
+- `SuiteCase(test_id, run)` supplies an async project check. Cases share the
+  target URL, session ID and per-run state through `TestContext`.
+- `ProtocolFailure(status_code, message, source)` carries a public classified
+  failure. A classified case error does not automatically abort the suite.
 
-- `TargetGateway.prepare(target_url, session_id)` prepares a target and returns
-  its echoed session ID. A future HTTP adapter must require the target's 201
-  success response, translate classified errors, and return only after readiness.
-- `TargetGateway.code_coverage(target_url, session_id)` returns a validated code
-  coverage measure for the session. The current tests provide mock gateways.
-- `SuiteCase(test_id, run)` supplies an async project check. Cases share a
-  `TestContext` containing the target URL, session ID, and per-run state. Future
-  adapters own the agreed project requests, routing, expected outcomes, and
-  prerequisite skip decisions.
-- `ProtocolFailure(status_code, message, source)` carries a classified failure.
-  Target setup errors retain their status/message/source. Classified case
-  failures produce an error result without automatically aborting the suite.
-
-The full configured setup/run/report flow is exercised over HTTP in
-`test_tester_app.py`, using injected mock targets and synthetic checks. These
-examples validate orchestration, not any target's real project behavior.
+Mock-target orchestration tests are separate from the real HTTP incident suite.
+The configured plan includes 41 executable checks and five explicit gap cases;
+see [the acceptance mapping](phase4-test-mapping.md) for assertions and limits.
 
 ## Session and report behavior
 
-The coordinator stores sessions in memory for one process's lifetime. A short
-thread lock protects run claims and report publication across request threads;
-no adapter is awaited while holding the lock. No expiry or cleanup removes
-active sessions or completed reports. Multiple processes do not share this
-registry, and a restart loses it; use a single worker for this implementation.
+Sessions and serialized report snapshots live in one process. A short lock
+protects run claims and publication; adapters are never awaited while holding
+it. Reports remain unchanged on retrieval. A restart loses the registry, and
+multiple processes do not share it, so use one worker and one service instance.
+The delivery caps each registry at 32 sessions and rejects new setup at capacity
+rather than evicting reports or stores.
 
-Setup creates no ready session on failure, timeout, or mismatched echoed ID.
-A successful session begins ready; report retrieval returns 409 until it has
-finished. Only one run can claim it, and concurrent/subsequent runs return 409,
-including after an abort. Invalid requests do not consume a ready session.
+Failed setup, timeout or a mismatched echoed ID creates no ready tester session.
+A successful session becomes ready. Only one run can claim it, including when
+an earlier run aborted; invalid requests do not consume the ready session.
 
-Each configured case produces exactly one result, in plan order. Unexpected
-case exceptions, malformed adapter results, or run timeouts preserve prior
-results, mark the interrupted case as error/source tester, and mark subsequent
-unexecuted cases skip. The partial report is stored before the run returns a
-500/source tester. Cancellation also freezes the partial report before
-propagating cancellation. A process crash can still prevent report recovery.
+Each case produces one ordered result. Unexpected exceptions, invalid adapter
+results or run timeout preserve prior results, mark an interrupted case as
+`error`/source `tester`, and mark later unexecuted cases `skip`. The partial
+report is frozen before a tester-abort `500`. Cancellation also preserves a
+partial report before propagating. A process crash can prevent report recovery.
 
-Normal assertion failures and classified target/communication errors remain in
-a normally completed report, returned with suite HTTP 200. Report retrieval
-never reruns cases or refetches target coverage. Reports are serialized to an
-internal JSON snapshot; changing a returned response or an adapter-owned model
-cannot change subsequent lookups.
+Ordinary assertion failures and classified target/communication errors remain
+in a normally completed report with HTTP `200`. Report retrieval does not rerun
+checks or refetch coverage. Code-coverage lookup failures produce unknown counts
+with reasons when classified; unexpected internal failures abort while retaining
+completed cases. Component/system coverage remains unknown pending agreed
+inventories and mappings. Pass counts are not coverage measurements.
 
-Code coverage is taken from the injected gateway. A classified coverage
-retrieval failure produces null/null counts with an explanatory basis; an
-unexpected internal failure during retrieval aborts while retaining all case
-results already recorded. Component and system coverage remain null/null with
-explicit pending-inventory explanations. No component/AC totals are invented.
+The generic coordinator defaults to setup/run limits of 10/30 seconds. The
+configured delivery uses 30/90 seconds, with a 15-second gateway deadline per
+call. These are configured bounds, not measured hosting guarantees. No automatic
+project-request retry policy is enabled.
 
-The default setup/run bounds are 10 and 30 seconds, configurable on the
-coordinator. These are local implementation bounds, not registered course
-timing guarantees or measured Render cold-start limits. The run bound includes
-case execution and code coverage retrieval. Future network adapters also need
-bounded connection/read operations and response sizes. No automatic project
-request retry policy is supplied.
+## Isolated system behavior
 
-## Target admission and outbound limits
+The system controls are `POST /system/test/setup` and
+`GET /system/test/report?session_id=...`. Setup creates and seeds a session-owned
+store before publishing readiness. Course project requests use
+`/system/api/v1`; the normal root API is a separate store.
 
-`ApprovedTargets` checks an explicitly configured full base URL, including its
-scheme, hostname, port, and base path. It canonicalizes hostname case/IDNA,
-default ports, and a final slash, then requires an exact configured match.
-Credential-bearing URLs, query/fragment components, ambiguous encodings,
-invalid authorities, local hostnames, and nonpublic literal addresses are
-rejected. A path prefix or similar hostname does not grant access.
+Each course session uses a generated PostgreSQL schema without `public` fallback
+or, in local mode without an explicit course URL, disposable SQLite. Trusted
+request context selects its engine and candidate-fixture seed. Unknown or
+unprepared contexts never fall back to normal data. Reset affects only the
+selected course session and restores candidate fixtures; this does not establish
+a pod-approved shared dataset.
 
-This is offline logical URL admission. It performs no DNS resolution and does
-not guarantee an approved DNS name resolves to a public address. Before any
-live outbound adapter is enabled, implement connection-time DNS/address
-enforcement, redirect restrictions, timeouts, response-size bounds, and any
-documented target credentials. Keep credentials out of URLs and reports.
+An optional `X-Test-Session-Id` selects a retained store. Headerless calls use
+the newest prepared session, so external manual/headerless suites must run
+serially. Each store permits one active incident request. Dependency cleanup and
+lease release finish before HTTP response completion, including empty and
+streaming responses. Graceful shutdown cleans only owned stores; abrupt failure
+can leave orphaned schemas requiring inspected operator cleanup.
 
-## Pending system/project integration
+## Target admission and outbound bounds
 
-- Root system `POST /test/setup` and `GET /test/report` are not implemented here.
-  Existing `/api/v1/test/reset` must not be reused as global session setup.
-- The PostgreSQL pytest helper is local regression infrastructure. It is not a
-  system session registry or a production session-routing implementation.
-- The pod must agree which project operations every target supports, schemas,
-  fixtures/labels, session correlation, reset/cleanup/concurrency behavior,
-  coverage inventories, access, and timing/retry rules.
-- No routing header is assumed and no real project checks are selected by
-  default. Team 102's read-only report feed is not assumed to implement our
-  incident workflow.
-- Published registry URLs, deployment, measured limits, and real bidirectional
-  cross-team runs remain later review steps.
+`ApprovedTargets` canonicalizes and checks the exact full base URL, including
+scheme, authority and base path. A similar hostname or child path is not an
+approved match. Credentials, query/fragment components and ambiguous encodings
+are rejected. Additional public bases require trusted server configuration;
+request data cannot change the allowlist or add credentials.
 
-## Local validation
+`HttpTargetGateway` checks DNS answers at connection time, rejects nonpublic or
+mixed answers, connects to a checked literal address and preserves the original
+TLS hostname. Redirects, proxy inheritance and source-credential forwarding are
+disabled. Responses are bounded to 2 MiB. Only explicit local factories permit
+approved loopback IP literals; a public hostname resolving to loopback remains
+rejected.
 
-### Walk through the tester locally
+Transport approval alone does not authorize destructive project operations.
+The incident suite permits writes only to its exact configured isolated own
+base, and later mutations require a successful isolated reset first. A peer
+read-only feed is not assumed to implement the incident workflow and is not
+reset by this suite. Interface scope, shared labels/fixtures, session behavior,
+coverage, access and timing expectations still need cross-team agreement.
 
-The tester lifecycle is ready for a synthetic local walkthrough. The complete
-cross-team interface is still partial: root system controls, isolated session
-fixtures/routing, a real target gateway and project cases, coverage measurement,
-and deployment/cross-team runs remain outstanding as listed above.
+## Local tools
 
-From the repository root, after installing `requirements-dev.txt`, run:
+The synthetic demo makes no target calls and uses no database or source key:
 
 ```powershell
 .\.venv\Scripts\python.exe -m tester_demo
 .\.venv\Scripts\python.exe -m tester_demo --scenario fail
 .\.venv\Scripts\python.exe -m tester_demo --scenario abort
-```
-
-The demo calls the tester's HTTP controls through an in-process client. It
-prepares a session (`201`), checks that the report is not ready (`409`), runs
-three synthetic cases, retrieves the saved report (`200`), rejects a second
-run (`409`), and verifies that the saved report did not change. A normal case
-failure is recorded in a completed suite with run HTTP `200`. An unexpected
-tester abort returns `500` after saving a partial report for retrieval.
-
-For an interactive walkthrough, start the separate loopback demo server:
-
-```powershell
 .\.venv\Scripts\python.exe -m tester_demo --serve
 ```
 
-Open [the local tester docs](http://127.0.0.1:8001/tester/docs). In order:
+Server mode exposes http://127.0.0.1:8001/tester/docs. Setup uses the fixed target
+`https://synthetic.invalid/sec450`; it is never resolved. The demo exercises
+three synthetic lifecycle cases, not the incident API or peer interoperability.
 
-1. Call `POST /test/setup` with `{"target_url":"https://synthetic.invalid/sec450"}`.
-2. Copy the returned `session_id`; use it with `GET /test/report` to see `409`.
-3. Call `POST /test/run` with `{"session_id":"<returned value>"}`.
-4. Retrieve `GET /test/report` again, then repeat the run to see `409`.
-
-The fixed target is synthetic and never resolved or contacted. These cases do
-not exercise the incident API or Team 102. The demo reads no API keys or `.env`,
-uses no database, and reports unavailable coverage as null/null with an
-explanation. The server uses one process; restarting loses its demo sessions.
-Stop it with Ctrl+C. The ordinary `main:app` tester stays unconfigured.
-
-### Real local incident-operation audit
-
-The recovered Phase 2 Section 5.1 contract is preserved in
-`contracts/phase2-v1.0.0.openapi.json`. The separate command below exercises real
-incident routes and emits one row for every common operation, including
-requirement mappings, failed checks, and errors not exercised:
+The separate local audit checks all nine incident operations in a disposable
+store and accepts no remote target:
 
 ```powershell
 .\.venv\Scripts\python.exe -m contract_audit --format markdown
 ```
 
-Unlike the three-case synthetic walkthrough, this checks the incident API.
-It creates a disposable local store using the existing harness, never loads
-application `.env` credentials, and accepts no remote URL. An explicit guarded
-`TEST_DATABASE_URL` selects disposable local PostgreSQL schemas; otherwise it
-uses temporary SQLite. Exit 1 means observed contract differences; exit 2 means
-configuration failure. Neither shared-fixture restoration nor untested 500/503
-paths are reported as passing. Historical assessment examples are diagnostic,
-not an invented approved label set. It does not configure the mounted tester,
-implement system sessions, measure coverage, or establish deployed conformance.
-See [the reconciliation record](phase2-contract-reconciliation.md).
-
-### Regression tests
-
-Use the normal disposable-store harness. With no `TEST_DATABASE_URL`, tests
-use SQLite; an explicit approved local test URL opts into PostgreSQL schemas.
+For the real configured local HTTP delivery and saved acceptance evidence,
+follow [the release runbook](phase4-delivery.md). Unit/regression checks include:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q test_testing_protocol.py test_tester_core.py test_tester_targets.py test_tester_app.py
 ```
 
-The models validate paired unknown coverage counts, strict measured counts,
-error sources, result identities, and serialization. Lifecycle tests exercise
-concurrent claims, partial aborts, timeouts/cancellation, stored report
-immutability, and setup recovery. HTTP tests exercise mounted OpenAPI, error
-translation, admission before gateway calls, normal reports, and abort lookup.
-All target behavior is injected and synthetic; these tests make no external
-requests or changes to a deployed service.
-
-The protocol behavior comes from the supplied instructor Cross-team Testing
-Interface. FastAPI's [independent mounted-app documentation](https://fastapi.tiangolo.com/advanced/sub-applications/)
+The control protocol specifies setup/run/report behavior independently of the
+incident contract. FastAPI's [mounted-app documentation](https://fastapi.tiangolo.com/advanced/sub-applications/)
 and Pydantic's [serialization documentation](https://docs.pydantic.dev/latest/concepts/serialization/)
-describe the framework mechanisms used here.
+describe the framework mechanisms used here. A working control exchange or
+local regression run is not proof of complete cross-team conformance.
