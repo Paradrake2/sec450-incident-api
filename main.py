@@ -12,8 +12,8 @@ from fastapi.routing import APIRoute
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from fastapi.openapi.utils import get_openapi
-from sqlalchemy import create_engine, Column, String, Text, DateTime, ForeignKey, CheckConstraint, Boolean, or_, select, delete, update
-from sqlalchemy.orm import DeclarativeBase, Session
+from sqlalchemy import create_engine, inspect, or_, select, delete, update
+from sqlalchemy.orm import Session
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 
@@ -22,6 +22,11 @@ from disclosure_templates import build_draft
 from request_models import CreateIncident, ReviewRequest, LinkRequest
 from request_preparation import build_preparation
 from tester_app import create_tester_app
+from incident_store import (
+    Base, DisclosureRow, IncidentRow, InvalidIncidentError, RelationRow, ReviewRow,
+    save_incident, team102_source_index,
+)
+from migration_tools import _valid_team102_identity_index
 from contract_schemas import (
     IncidentResponse, AssessmentResponse, DisclosureResponse, ErrorResponse,
     ReviewHistoryResponse, DisclosureHistoryResponse,
@@ -34,52 +39,6 @@ DB_URL = os.getenv("DATABASE_URL", "sqlite:///./incidents.db")
 if DB_URL.startswith("postgres://"):
     DB_URL = "postgresql://" + DB_URL[len("postgres://"):]
 engine = create_engine(DB_URL, pool_pre_ping=True, connect_args={"check_same_thread": False} if DB_URL.startswith("sqlite") else {})
-
-class Base(DeclarativeBase):
-    pass
-
-class IncidentRow(Base):
-    __tablename__ = "incidents"
-    id = Column(String(36), primary_key=True)
-    title = Column(String(200), nullable=False)
-    log = Column(Text, nullable=False)
-    occurred_at = Column(DateTime(timezone=True), nullable=False)
-    created_at = Column(DateTime(timezone=True), nullable=False)
-    source = Column(String(100), nullable=True)
-    state = Column(String(32), nullable=False, default="RECEIVED")
-    assessment = Column(Text, nullable=True)
-    review = Column(Text, nullable=True)
-    related = Column(Text, nullable=False, default="[]")
-
-class ReviewRow(Base):
-    """Append-only review decisions; IncidentRow.review stays the latest snapshot."""
-    __tablename__ = "incident_reviews"
-    id = Column(String(36), primary_key=True)
-    incident_id = Column(String(36), ForeignKey("incidents.id"), nullable=False, index=True)
-    decision = Column(String(20), nullable=False)
-    reviewer = Column(Text, nullable=False)
-    rationale = Column(Text, nullable=True)
-    reviewed_at = Column(DateTime(timezone=True), nullable=False)
-
-class RelationRow(Base):
-    """Each undirected link is stored exactly once, using canonical ID order."""
-    __tablename__ = "incident_relations"
-    incident_a_id = Column(String(36), ForeignKey("incidents.id"), primary_key=True)
-    incident_b_id = Column(String(36), ForeignKey("incidents.id"), primary_key=True)
-    __table_args__ = (
-        CheckConstraint("incident_a_id < incident_b_id", name="ck_relation_canonical_order"),
-    )
-
-
-class DisclosureRow(Base):
-    """Immutable generated disclosure versions, never final SEC filings."""
-    __tablename__ = "disclosure_drafts"
-    id = Column(String(36), primary_key=True)
-    incident_id = Column(String(36), ForeignKey("incidents.id"), nullable=False, index=True)
-    draft = Column(Text, nullable=False)
-    generated_at = Column(DateTime(timezone=True), nullable=False)
-    final = Column(Boolean, nullable=False, default=False)
-
 
 def stamp(dt):
     if not dt:
@@ -192,6 +151,27 @@ def backfill_legacy_relations(database_engine: Engine | None = None):
 def initialize_database(database_engine: Engine) -> None:
     """Prepare only the explicitly selected store, including legacy imports."""
     Base.metadata.create_all(database_engine)
+    # create_all skips indexes on existing tables. Enforce identity there too;
+    # existing duplicates must be reconciled explicitly, never silently deleted.
+    with database_engine.connect() as connection:
+        identity_index = next((
+            index for index in inspect(connection).get_indexes("incidents")
+            if index["name"] == team102_source_index.name
+        ), None)
+        hidden_index = False
+        if identity_index is None and connection.dialect.name == "sqlite":
+            # SQLite reflection omits expression indexes; their names still exist.
+            hidden_index = any(
+                index["name"] == team102_source_index.name
+                for index in connection.exec_driver_sql("PRAGMA index_list(incidents)").mappings()
+            )
+        if hidden_index or (
+            identity_index is not None
+            and not _valid_team102_identity_index(identity_index, connection.dialect.name)
+        ):
+            raise ValueError("Cannot start incident API: Team 102 identity index definition differs")
+    if identity_index is None:
+        team102_source_index.create(database_engine, checkfirst=True)
     backfill_legacy_reviews(database_engine)
     backfill_legacy_relations(database_engine)
 
@@ -297,23 +277,19 @@ def reset(request: Request, session: Session = Depends(get_session)):
     session.commit()
     return Response(status_code=204)
 
-@app.post("/api/v1/incidents", status_code=201, response_model=IncidentResponse, responses={**ERROR_400, **ERROR_415, **ERROR_500})
-def create_incident(data: CreateIncident, session: Session = Depends(get_session)):
-    if not data.title.strip() or not data.log.strip():
-        error("INVALID_REQUEST", "title and log must not be blank", 400)
-    now = datetime.now(timezone.utc)
-    # SQLite drops timezone offsets while PostgreSQL normalizes the instant.
-    # Normalize before persistence so both stores retain the same UTC instant.
-    occurred_at = data.occurredAt
-    if occurred_at.tzinfo is None:
-        occurred_at = occurred_at.replace(tzinfo=timezone.utc)
-    else:
-        occurred_at = occurred_at.astimezone(timezone.utc)
-    row = IncidentRow(id=str(uuid4()), title=data.title, log=data.log, occurred_at=occurred_at,
-                      created_at=now, source=data.source, state="RECEIVED", related="[]")
-    session.add(row)
+@app.post("/api/v1/incidents", status_code=201, response_model=IncidentResponse, responses={
+    200: {"model": IncidentResponse, "description": "Existing Team 102 report incident"},
+    **ERROR_400, **ERROR_415, **ERROR_500,
+})
+def create_incident(data: CreateIncident, response: Response, session: Session = Depends(get_session)):
+    try:
+        row, created = save_incident(session, data)
+    except InvalidIncidentError as exc:
+        error("INVALID_REQUEST", str(exc), 400)
     session.commit()
     session.refresh(row)
+    if not created:
+        response.status_code = 200
     return serialize(row, session)
 
 STATES = {"RECEIVED", "UNDER_REVIEW", "POTENTIALLY_MATERIAL", "NOT_MATERIAL", "MATERIAL_CONFIRMED", "CLOSED"}

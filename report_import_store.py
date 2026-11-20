@@ -104,15 +104,27 @@ def import_report(database_engine: Engine, fetch: ReportFetch) -> ImportReceipt:
     a real outer write transaction before any savepoint could be released, so
     an observation failure also rolls back a newly inserted snapshot.
     """
+    with Session(database_engine) as session, session.begin():
+        receipt = stage_report(session, fetch)
+    # A failed flush or commit propagates without issuing a success receipt.
+    return receipt
+
+
+def stage_report(session: Session, fetch: ReportFetch) -> ImportReceipt:
+    """Stage source evidence in a transaction owned by the caller.
+
+    This lets the explicit incident importer commit evidence and the incident
+    together. Callers must roll back the whole transaction after any failure.
+    """
     # Reparse the original bytes at the persistence boundary rather than
     # trusting any caller-provided parsed representation or digest.
     document = parse_report(fetch.raw_content, fetch.report_id)
     source_system = _validate_provenance(fetch)
     semantic_digest = sha256(canonical_report(document)).hexdigest()
     raw_digest = sha256(fetch.raw_content).hexdigest()
-    if database_engine.dialect.name == "postgresql":
+    if session.get_bind().dialect.name == "postgresql":
         insert = postgres_insert
-    elif database_engine.dialect.name == "sqlite":
+    elif session.get_bind().dialect.name == "sqlite":
         insert = sqlite_insert
     else:
         raise ValueError("Source report imports require PostgreSQL or SQLite")
@@ -132,30 +144,27 @@ def import_report(database_engine: Engine, fetch: ReportFetch) -> ImportReceipt:
         "source_system", "source_report_id", "canonical_sha256",
     ])
 
-    with Session(database_engine) as session, session.begin():
-        session.execute(statement)
-        snapshot_id = session.scalar(select(SourceReportSnapshot.id).where(
-            SourceReportSnapshot.source_system == source_system,
-            SourceReportSnapshot.source_report_id == source_report_id,
-            SourceReportSnapshot.canonical_sha256 == semantic_digest,
-        ))
-        if snapshot_id is None:
-            raise RuntimeError("Source report snapshot could not be retained")
-        session.add(SourceReportObservation(
-            id=observation_id,
-            snapshot_id=snapshot_id,
-            fetched_at=fetch.fetched_at.astimezone(UTC),
-            source_url=fetch.source_url,
-            request_id=fetch.request_id,
-            retrieval_method=fetch.retrieval_method,
-            raw_sha256=raw_digest,
-        ))
-        receipt = ImportReceipt(
-            snapshot_id=snapshot_id,
-            observation_id=observation_id,
-            created=snapshot_id == candidate_id,
-            source_report_id=fetch.report_id,
-            canonical_sha256=semantic_digest,
-        )
-    # A failed flush or commit propagates without issuing a success receipt.
-    return receipt
+    session.execute(statement)
+    snapshot_id = session.scalar(select(SourceReportSnapshot.id).where(
+        SourceReportSnapshot.source_system == source_system,
+        SourceReportSnapshot.source_report_id == source_report_id,
+        SourceReportSnapshot.canonical_sha256 == semantic_digest,
+    ))
+    if snapshot_id is None:
+        raise RuntimeError("Source report snapshot could not be retained")
+    session.add(SourceReportObservation(
+        id=observation_id,
+        snapshot_id=snapshot_id,
+        fetched_at=fetch.fetched_at.astimezone(UTC),
+        source_url=fetch.source_url,
+        request_id=fetch.request_id,
+        retrieval_method=fetch.retrieval_method,
+        raw_sha256=raw_digest,
+    ))
+    return ImportReceipt(
+        snapshot_id=snapshot_id,
+        observation_id=observation_id,
+        created=snapshot_id == candidate_id,
+        source_report_id=fetch.report_id,
+        canonical_sha256=semantic_digest,
+    )
