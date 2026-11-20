@@ -18,6 +18,8 @@ from sqlalchemy.exc import SQLAlchemyError
 
 BASELINE_REVISION = "0001_baseline"
 REPORT_IMPORT_TABLES = frozenset({"source_report_snapshots", "source_report_observations"})
+_TEAM102_IDENTITY_INDEX = "uq_incidents_team102_source"
+_TEAM102_IDENTITY_PREDICATE = "substr(source, 1, 15) = 'team102:report:' OR substr(source, 1, 23) = 'team102-fixture:report:'"
 
 # Frozen adoption contract for revision 0001; never derive it from live models.
 # Each column is (SQLAlchemy type, nullable). No baseline column has a server default.
@@ -73,6 +75,31 @@ def _check_sql(sql):
     return re.sub(r'[\s()"`\[\]]', "", normalized)
 
 
+def _valid_team102_identity_index(index, dialect_name):
+    """Recognize only the additive index shipped by revision 0003/startup."""
+    options = dict(index.get("dialect_options", {}))
+    predicate = options.pop(f"{dialect_name}_where", None)
+    return (
+        index.get("name") == _TEAM102_IDENTITY_INDEX
+        and index.get("unique")
+        and tuple(index.get("column_names", ())) == ("source",)
+        and predicate is not None
+        and _identity_predicate_sql(predicate) == _identity_predicate_sql(_TEAM102_IDENTITY_PREDICATE)
+        and not any(value is not None and bool(value) for value in options.values())
+        and not index.get("include_columns")
+        and not index.get("expressions")
+    )
+
+
+def _identity_predicate_sql(value):
+    # Normalize dialect SQL syntax without changing case or spaces in literals.
+    pieces = re.split(r"('(?:''|[^'])*')", str(value))
+    return "".join(
+        piece if position % 2 else _check_sql(piece).replace("~~", "like")
+        for position, piece in enumerate(pieces)
+    )
+
+
 def _validate_baseline(connection):
     inspector = inspect(connection)
 
@@ -118,6 +145,14 @@ def _validate_baseline(connection):
         expected_indexes = set()
         if table in {"incident_reviews", "disclosure_drafts"}:
             expected_indexes.add((f"ix_{table}_incident_id", ("incident_id",), False))
+        indexes = inspector.get_indexes(table)
+        identity_index = next((
+            index for index in indexes if index["name"] == _TEAM102_IDENTITY_INDEX
+        ), None)
+        if identity_index is not None:
+            if table != "incidents" or not _valid_team102_identity_index(identity_index, connection.dialect.name):
+                refuse(table, "indexes")
+            indexes = [index for index in indexes if index is not identity_index]
         if connection.dialect.name == "sqlite":
             # SQLAlchemy skips SQLite expression indexes during reflection.
             # Count all explicit indexes first so those cannot escape adoption checks.
@@ -127,12 +162,14 @@ def _validate_baseline(connection):
                 (item["name"], bool(item["unique"]), bool(item["partial"]))
                 for item in sqlite_indexes if item["origin"] != "pk"
             }
+            if identity_index is not None:
+                explicit_indexes.discard((_TEAM102_IDENTITY_INDEX, True, True))
             if explicit_indexes != {(name, unique, False) for name, _, unique in expected_indexes}:
                 refuse(table, "indexes")
         if inspector.get_unique_constraints(table):
             refuse(table, "unique constraints")
         actual_indexes = set()
-        for index in inspector.get_indexes(table):
+        for index in indexes:
             actual_indexes.add((index["name"], tuple(index["column_names"]), bool(index["unique"])))
             if (
                 any(

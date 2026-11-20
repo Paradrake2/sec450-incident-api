@@ -1,9 +1,9 @@
 # Team 102 API report preservation
 
-The selected integration reads Team 102's Query API and keeps source evidence
-in our application-owned PostgreSQL database. Shared database access is
-deferred. This operator-only slice preserves reports; it does not expose a new
-public endpoint or automatically create incidents or human decisions.
+Team 105 imports reports from Team 102's Query API and keeps the source evidence
+in its own PostgreSQL database. The operator-only import preserves reports by
+default. The explicit `--create-incident` option converts one selected report
+and creates its incident in the same transaction as the retained evidence.
 
 ## Scope and contract limits
 
@@ -28,8 +28,9 @@ for new or corrected reports. That agreement is needed before automatic sync.
 Upstream summaries, integrity results, and AI assessments remain attributed
 source evidence. They cannot set an incident state, submit a human review,
 approve a draft, or establish independently verified facts. Mapping into
-application incidents/evidence revisions follows response-schema confirmation
-and the protected product boundary.
+application incidents uses the converter's summary, raw log lines and earliest
+timeline time. Source changes never overwrite an existing incident or its
+assessment/review history.
 
 ## Read-only schema probe
 
@@ -146,6 +147,14 @@ contacting the source. Normal application startup still uses its existing
 schema creation/backfill behavior for the four legacy tables; moving that
 entire lifecycle to migrations remains separate work.
 
+Revision `0003_team102_identity` adds a partial unique index for the reserved
+`team102:report:` and `team102-fixture:report:` source namespaces. Existing
+duplicates cause upgrade to stop without deleting any incident or history;
+reconcile those records explicitly before retrying. Application startup also
+adds this index to preexisting incident tables. Other source labels remain
+reusable. Adoption recognizes only the exact additive identity index alongside
+the frozen baseline schema.
+
 Fresh upgrade, populated legacy adoption, repeated upgrade, schema-drift
 rejection, transactional rollback, and report-table downgrade are tested on
 disposable stores. A programmatic downgrade to `0001_baseline` drops imported
@@ -184,6 +193,52 @@ established. Import behavior is tested with synthetic fixtures. Read-only live
 schema observations do not establish production import compatibility.
 
 ## Evidence and retry behavior
+
+### Explicit fetch → convert → create
+
+After migrating the selected database, this synthetic example exercises the
+complete import without contacting Team 102:
+
+```powershell
+.\.venv\Scripts\python.exe -m team102_import --report-id 17 --fixture examples/team102-incident.synthetic.json --create-incident
+```
+
+For a selected API report, omit `--fixture` and configure `SEC450_KEY` as above.
+The ordinary import command still preserves source evidence only. Conversion
+requires a usable timeline timestamp and nonblank incident text; the importer
+does not substitute the fetch time for a missing event time.
+
+Programmatic callers can use
+`import_incident(engine, report_id, client=client)` with a configured
+`Team102Client`. It returns `IncidentImportReceipt(incident_id, created, report)`;
+`report` contains the snapshot/observation receipt. Fixture callers pass
+`fixture=Path(...)` and receive the separate fixture source identity.
+
+- The first API create with `source=team102:report:<id>` returns `201`. Sending
+  that source again returns `200` with the existing incident, including its
+  current workflow state. It does not return `409` or reset assessment/review.
+- A database unique index and conflict insert enforce this behavior across
+  simultaneous requests and process restarts. This applies to imported report
+  identities; omitted sources and ordinary source labels can repeat.
+- The explicit importer fetches and converts before any writes, then saves
+  source evidence and the incident in one transaction. Timeout, connection,
+  authentication, HTTP errors, invalid reports and write/commit failures cannot
+  leave a partially imported incident or snapshot.
+- Retrying a successful import reuses its incident and semantic snapshot and
+  adds a fetch observation. Changed content under the same report ID appends a
+  source snapshot while preserving the incident's original evidence and state.
+- Fixture incidents use `team102-fixture:report:<id>`, separately from API
+  incidents. Tests continue to use disposable stores; fixture mode alone does
+  not select a disposable database.
+
+The CLI includes `incidentId` when `--create-incident` is selected, and reports
+`already_present` when that incident already exists. Manual retries remain
+explicit; upstream failure classification and bounded `Retry-After` metadata
+are unchanged. The pytest integration duplicate check is a regular passing
+test. Additional `team102.*` course-tester cases can call the converter and
+existing incident API without contacting a live source.
+
+### Retained source evidence
 
 - `source_report_snapshots` stores the complete first response bytes for each
   distinct semantic report, its raw/canonical SHA-256 digests, source identity,

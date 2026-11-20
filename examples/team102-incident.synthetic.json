@@ -1,0 +1,11 @@
+{
+  "report_id": 17,
+  "fixture_note": "Synthetic incident-conversion example; no real source data.",
+  "body": {
+    "summary": "Synthetic possible ransomware event",
+    "raw_lines": ["Synthetic ransomware alert on an imaginary file server."],
+    "timeline": [{"ts": "2026-11-10T14:00:00Z"}],
+    "matched_rule": {},
+    "ai_assessment": {}
+  }
+}
