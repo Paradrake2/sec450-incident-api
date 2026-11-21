@@ -26,6 +26,28 @@ def _entry_time(entry):
     return None
 
 
+def _extract_raw_lines(raw_lines) -> list[str]:
+    """Keep the original log text in source order.
+
+    Team 102's report builder emits raw_lines as objects with a `text` key.
+    Historical synthetic fixtures used plain strings. Reject unsupported
+    entries instead of silently discarding source evidence.
+    """
+    if raw_lines is None:
+        return []
+    if not isinstance(raw_lines, list):
+        raise ConversionError("raw_lines must be a list")
+    lines = []
+    for line in raw_lines:
+        if isinstance(line, str):
+            lines.append(line)
+        elif isinstance(line, dict) and isinstance(line.get("text"), str):
+            lines.append(line["text"])
+        else:
+            raise ConversionError("raw_lines entries require string text")
+    return lines
+
+
 def convert_report(report: dict, fallback_occurred_at: datetime | None = None) -> dict:
     """Return a validated CreateIncident dict. fallback_occurred_at is opt-in (e.g. fetched_at)."""
     rid, body = report.get("report_id"), report.get("body")
@@ -33,7 +55,7 @@ def convert_report(report: dict, fallback_occurred_at: datetime | None = None) -
         raise ConversionError("not a Team 102 report envelope")
 
     summary = (body.get("summary") or "").strip()
-    lines = [x for x in body.get("raw_lines") or [] if isinstance(x, str)]
+    lines = _extract_raw_lines(body.get("raw_lines"))
     log = "\n".join(lines) or summary
     times = [t for t in map(_entry_time, body.get("timeline") or []) if t]
     when = min(times) if times else fallback_occurred_at
