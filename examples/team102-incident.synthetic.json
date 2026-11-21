@@ -1,0 +1,33 @@
+{
+  "report_id": 17,
+  "fixture_note": "Synthetic incident-conversion example; no real source data.",
+  "body": {
+    "summary": "Synthetic possible ransomware event",
+    "raw_lines": [
+      {
+        "raw_id": 101,
+        "batch_id": 7,
+        "source": "file_audit",
+        "text": "Synthetic ransomware alert on an imaginary file server."
+      },
+      {
+        "raw_id": 102,
+        "batch_id": 7,
+        "source": "file_audit",
+        "text": "Synthetic files renamed during a mock exercise."
+      }
+    ],
+    "timeline": [
+      {
+        "ts": "2026-11-10T14:00:00Z",
+        "source": "file_audit"
+      }
+    ],
+    "matched_rule": {
+      "id": "synthetic-demo-rule"
+    },
+    "ai_assessment": {
+      "status": "unavailable"
+    }
+  }
+}

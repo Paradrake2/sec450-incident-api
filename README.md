@@ -123,8 +123,13 @@ not established as an inter-team agreement.
 An operator-only importer can fetch one explicitly selected report and retain
 an immutable content snapshot plus retrieval provenance. It uses migrations
 and has no public import endpoint, automatic polling, or automatic incident
-creation. The complete source body contract and incident mapping still need
-confirmation; importer tests use synthetic responses.
+creation by default. `python -m team102_import --report-id <id> --create-incident`
+explicitly fetches, converts and saves one incident with its source evidence
+in a single transaction. Imported report retries return the existing incident
+without replacing evidence or workflow state (`201` for a new API incident,
+`200` for a duplicate). Fixture imports use a separate identity namespace.
+The complete source body contract still needs confirmation; importer tests use
+synthetic responses and disposable databases.
 The read-only `python -m team102_probe` command can discover one report and
 compare its detail response with our incident schema without importing data.
 It prints redacted schema diagnostics and makes at most two GET requests;

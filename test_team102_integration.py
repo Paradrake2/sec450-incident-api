@@ -126,10 +126,6 @@ def test_converted_incident_survives_restart():
         assert got.json()["state"] == "POTENTIALLY_MATERIAL"
 
 
-# Known gap: right now nothing stops the same Team 102 report from being
-# created twice. Krish is adding duplicate handling. strict=True means this
-# test will start failing once that's done, so we remember to remove the xfail.
-@pytest.mark.xfail(strict=True, reason="duplicate handling for Team 102 reports not built yet")
 def test_same_report_twice_only_makes_one_incident():
     with TestClient(app) as client:
         client.post("/api/v1/test/reset")
