@@ -29,8 +29,13 @@ Upstream summaries, integrity results, and AI assessments remain attributed
 source evidence. They cannot set an incident state, submit a human review,
 approve a draft, or establish independently verified facts. Mapping into
 application incidents uses the converter's summary, raw log lines and earliest
-timeline time. Source changes never overwrite an existing incident or its
-assessment/review history.
+timeline time. Team 102's `sec450/reports.py` emits `body.raw_lines` as objects
+with `raw_id`, `batch_id`, `source`, and `text`; conversion joins the original
+`text` values in list order, not the object representations or metadata.
+Legacy synthetic string entries are also accepted. Unsupported line entry types
+are rejected before any database writes rather than silently losing evidence.
+Source changes never overwrite an existing incident or its assessment/review
+history.
 
 ## Read-only schema probe
 
@@ -230,6 +235,24 @@ Programmatic callers can use
 - Fixture incidents use `team102-fixture:report:<id>`, separately from API
   incidents. Tests continue to use disposable stores; fixture mode alone does
   not select a disposable database.
+
+**Direct-forwarding is a separate identity contract.** Team 102's supplied
+`sec450/incidents.py` sends `source` values in the form
+`sec450 <rule-id> report <report-id>` or `sec450 <rule-id> cluster <cluster-id>`.
+Those do **not** match the `team102:report:` idempotency namespace established
+by this importer. A retry of their push-based POST may still create an
+additional incident. Supporting the forwarding names (or a shared stable
+idempotency key) requires an explicit inter-team contract; this importer does
+not silently rewrite the sender's source identifiers.
+
+**Trust boundary:** The incident creation endpoint currently does not
+authenticate the caller. The partial unique index prevents duplicate source
+strings but does *not* prove they came from Team 102. An unauthenticated client
+could claim `team102:report:<id>` before the importer runs, causing later
+attempts for that identity to return the preexisting record. Real ingestion
+needs source authentication/authorization or an authenticated import boundary.
+Until then, use synthetic data and do not treat reserved source labels as
+verified provenance.
 
 The CLI includes `incidentId` when `--create-incident` is selected, and reports
 `already_present` when that incident already exists. Manual retries remain

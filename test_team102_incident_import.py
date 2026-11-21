@@ -38,6 +38,41 @@ def source(report=RANSOMWARE_REPORT):
     return httpx.MockTransport(lambda request: httpx.Response(200, json=report))
 
 
+def test_realistic_team102_report_object_lines_reach_incident_log(store):
+    # sec450/reports.py emits raw_lines as dictionaries with text and IDs,
+    # rather than the plain strings used by older synthetic test fixtures.
+    report = deepcopy(RANSOMWARE_REPORT)
+    report["body"]["raw_lines"] = [
+        {"raw_id": 41, "batch_id": 5, "source": "ssh_auth", "text": "failed login attempt"},
+        {"raw_id": 42, "batch_id": 5, "source": "ssh_auth", "text": "another failed login attempt"},
+    ]
+    with Team102Client("synthetic-key", transport=source(report)) as client:
+        receipt = import_incident(store, 501, client=client)
+    assert receipt.created
+    assert counts(store) == (1, 1, 1)
+    with Session(store) as session:
+        incident = session.get(IncidentRow, receipt.incident_id)
+        assert incident.source == "team102:report:501"
+        assert incident.log == "\n".join(["failed login attempt", "another failed login attempt"])
+        snapshot = session.get(SourceReportSnapshot, receipt.report.snapshot_id)
+        assert json.loads(snapshot.original_content)["body"]["raw_lines"] == report["body"]["raw_lines"]
+
+
+def test_documented_synthetic_fixture_preserves_object_log_lines(store):
+    from pathlib import Path
+
+    fixture = Path(__file__).resolve().parent / "examples" / "team102-incident.synthetic.json"
+    receipt = import_incident(store, 17, fixture=fixture)
+    assert receipt.created
+    with Session(store) as session:
+        incident = session.get(IncidentRow, receipt.incident_id)
+        assert incident.source == "team102-fixture:report:17"
+        assert incident.log == (
+            "Synthetic ransomware alert on an imaginary file server.\n"
+            "Synthetic files renamed during a mock exercise."
+        )
+
+
 def test_fetch_convert_create_preserves_raw_report_and_retry_state(store):
     with Team102Client("synthetic-key", transport=source()) as client:
         first = import_incident(store, 501, client=client)
@@ -91,6 +126,8 @@ def test_upstream_failure_leaves_no_partial_rows_and_can_retry(store, failure, k
     {"summary": "Bad timeline", "timeline": 42},
     {"summary": "Bad time", "timeline": [{"ts": "not-a-time"}]},
     {"summary": " ", "raw_lines": ["  "], "timeline": [{"ts": "2026-11-10T14:00:00Z"}]},
+    {"summary": "Malformed log object", "raw_lines": [{"raw_id": 3}],
+     "timeline": [{"ts": "2026-11-10T14:00:00Z"}]},
 ])
 def test_unconvertible_report_leaves_no_source_or_incident_rows(store, body):
     with Team102Client("synthetic-key", transport=source({"report_id": 501, "body": body})) as client:
