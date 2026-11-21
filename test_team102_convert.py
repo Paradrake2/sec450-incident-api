@@ -30,3 +30,45 @@ def test_rejects(bad):
 def test_naive_time_treated_as_utc():
     r = {"report_id": 1, "body": {"summary": "s", "timeline": [{"ts": "2026-01-01T00:00:00"}]}}
     assert convert_report(r)["occurredAt"] == "2026-01-01T00:00:00Z"
+
+
+def test_actual_team102_raw_line_objects_preserve_original_text_and_order():
+    # Mirrors sec450/reports.py:build_report in Team 102's shared repository.
+    report = {"report_id": 18, "body": {
+        "summary": "Suspicious authentication",
+        "raw_lines": [
+            {"raw_id": 11, "batch_id": 3, "source": "ssh_auth", "text": "first raw line"},
+            {"raw_id": 12, "batch_id": 3, "source": "ssh_auth", "text": "second raw line"},
+        ],
+        "timeline": [{"ts": "2026-11-10T14:00:00Z"}],
+    }}
+    result = convert_report(report)
+    assert result["title"] == "Suspicious authentication"
+    assert result["log"] == "first raw line\nsecond raw line"
+    assert result["source"] == "team102:report:18"
+
+
+def test_mixed_legacy_strings_and_report_objects_keep_text():
+    report = {"report_id": 19, "body": {
+        "summary": "Synthetic legacy input",
+        "raw_lines": ["plain text", {"text": "structured text"}],
+        "timeline": [{"ts": "2026-11-10T14:00:00Z"}],
+    }}
+    assert convert_report(report)["log"] == "plain text\nstructured text"
+
+
+@pytest.mark.parametrize("bad_lines", [
+    "not a list",
+    {"text": "not a list"},
+    [{"raw_id": 12}],
+    [{"text": 27}],
+    [None],
+])
+def test_malformed_raw_line_entries_are_rejected_not_silently_discarded(bad_lines):
+    report = {"report_id": 20, "body": {
+        "summary": "Must not silently lose source evidence",
+        "raw_lines": bad_lines,
+        "timeline": [{"ts": "2026-11-10T14:00:00Z"}],
+    }}
+    with pytest.raises(ConversionError, match="raw_lines"):
+        convert_report(report)
