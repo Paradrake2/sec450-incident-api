@@ -53,9 +53,24 @@ def test_realistic_team102_report_object_lines_reach_incident_log(store):
     with Session(store) as session:
         incident = session.get(IncidentRow, receipt.incident_id)
         assert incident.source == "team102:report:501"
-        assert incident.log == "failed login attempt\\nanother failed login attempt".replace("\\n", "\n")
+        assert incident.log == "\n".join(["failed login attempt", "another failed login attempt"])
         snapshot = session.get(SourceReportSnapshot, receipt.report.snapshot_id)
         assert json.loads(snapshot.original_content)["body"]["raw_lines"] == report["body"]["raw_lines"]
+
+
+def test_documented_synthetic_fixture_preserves_object_log_lines(store):
+    from pathlib import Path
+
+    fixture = Path(__file__).resolve().parent / "examples" / "team102-incident.synthetic.json"
+    receipt = import_incident(store, 17, fixture=fixture)
+    assert receipt.created
+    with Session(store) as session:
+        incident = session.get(IncidentRow, receipt.incident_id)
+        assert incident.source == "team102-fixture:report:17"
+        assert incident.log == (
+            "Synthetic ransomware alert on an imaginary file server.\n"
+            "Synthetic files renamed during a mock exercise."
+        )
 
 
 def test_fetch_convert_create_preserves_raw_report_and_retry_state(store):
